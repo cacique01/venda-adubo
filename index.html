@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gabriel Gatti – Sistema de Vendas</title>
+
+    <link rel="icon" href="img/icon.jpeg">
+    <link href="css/style.css" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import {
+            getFirestore, collection, addDoc, onSnapshot, doc,
+            updateDoc, query, orderBy, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+        import {
+            getAuth,
+            signInWithEmailAndPassword,
+            signOut,
+            onAuthStateChanged,
+            sendPasswordResetEmail
+        } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDRdeg9Jmu49PqOOZej8YkUspyFn3YQb4c",
+            authDomain: "gabriel-gatti-vendas.firebaseapp.com",
+            projectId: "gabriel-gatti-vendas",
+            storageBucket: "gabriel-gatti-vendas.firebasestorage.app",
+            messagingSenderId: "838167549878",
+            appId: "1:838167549878:web:ff203aef0df91a7c98d317"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // ── expor globalmente ──────────────────────────────────────
+        window._db = db;
+        window._auth = auth;
+        window._col = collection(db, "vendas");
+        window._addDoc = addDoc;
+        window._updateDoc = updateDoc;
+        window._doc = doc;
+        window._serverTimestamp = serverTimestamp;
+        window._signOut = () => signOut(auth);
+        window._vendas = [];
+
+        // ── controle de autenticação ───────────────────────────────
+        onAuthStateChanged(auth, (user) => {
+            const loginScreen = document.getElementById('login-screen');
+            const appContent = document.getElementById('app-content');
+
+            if (user) {
+                // Usuário logado — esconde login, mostra sistema
+                loginScreen.classList.add('hidden');
+                appContent.style.display = 'block';
+
+                // Mostra email do usuário no header
+                const badge = document.getElementById('user-badge');
+                if (badge) badge.textContent = '🔒 ' + user.email;
+
+                // Inicia listener do Firestore somente após login
+                const q = query(collection(db, "vendas"), orderBy("criadoEm", "desc"));
+                onSnapshot(q, (snap) => {
+                    window._vendas = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+                    if (typeof window.renderPainel === 'function') window.renderPainel();
+                    if (typeof window.renderHistorico === 'function') window.renderHistorico();
+                    if (typeof window.renderSemana === 'function') window.renderSemana();
+                    if (typeof window.renderMeta === 'function') window.renderMeta();
+                    document.getElementById('loading').style.display = 'none';
+                });
+
+            } else {
+                // Não logado — mostra tela de login
+                loginScreen.classList.remove('hidden');
+                appContent.style.display = 'none';
+            }
+        });
+
+        // ── função de login ────────────────────────────────────────
+        window.fazerLogin = async function () {
+            const email = document.getElementById('login-email').value.trim();
+            const senha = document.getElementById('login-senha').value;
+            const btn = document.getElementById('login-btn');
+            const erro = document.getElementById('login-erro');
+
+            erro.classList.remove('show');
+
+            if (!email || !senha) {
+                erro.textContent = 'Preencha o e-mail e a senha.';
+                erro.classList.add('show');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Entrando...';
+
+            try {
+                await signInWithEmailAndPassword(auth, email, senha);
+                // onAuthStateChanged cuida do resto
+            } catch (e) {
+                let msg = 'E-mail ou senha incorretos.';
+                if (e.code === 'auth/too-many-requests') msg = 'Muitas tentativas. Tente mais tarde.';
+                if (e.code === 'auth/network-request-failed') msg = 'Sem conexão com a internet.';
+                erro.textContent = msg;
+                erro.classList.add('show');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔑 Entrar';
+            }
+        };
+
+        // Enter para logar
+        window.loginKeydown = function (e) {
+            if (e.key === 'Enter') window.fazerLogin();
+        };
+
+        // ── função esqueci senha ───────────────────────────────────
+        window.esqueciSenha = async function () {
+            const email = document.getElementById('login-email').value.trim();
+            const erro = document.getElementById('login-erro');
+            const sucesso = document.getElementById('login-sucesso');
+
+            erro.classList.remove('show');
+            sucesso.classList.remove('show');
+
+            if (!email) {
+                erro.textContent = 'Digite seu e-mail acima antes de continuar.';
+                erro.classList.add('show');
+                return;
+            }
+
+            try {
+                await sendPasswordResetEmail(auth, email);
+                sucesso.textContent = '✅ E-mail de redefinição enviado para ' + email + '. Verifique a caixa de entrada.';
+                sucesso.classList.add('show');
+            } catch (e) {
+                let msg = 'Não foi possível enviar o e-mail.';
+                if (e.code === 'auth/user-not-found') msg = 'Nenhuma conta encontrada com esse e-mail.';
+                if (e.code === 'auth/invalid-email') msg = 'E-mail inválido.';
+                erro.textContent = msg;
+                erro.classList.add('show');
+            }
+        };
+    </script>
+</head>
+
+<body>
+
+    <!-- ══ TELA DE LOGIN ══════════════════════════════════════════ -->
+    <div id="login-screen">
+        <div class="login-box">
+            <div class="login-logo">
+                <div class="login-logo-icon">🌱</div>
+                <div>
+                    <h1>Gabriel Gatti</h1>
+                    <p>Sistema de Vendas</p>
+                </div>
+            </div>
+            <p class="login-title">🔐 Acesso restrito — faça login para continuar</p>
+
+            <div class="login-field">
+                <label>E-mail</label>
+                <input type="email" id="login-email" placeholder="seu@email.com" onkeydown="loginKeydown(event)" autofocus>
+            </div>
+            <div class="login-field">
+                <label>Senha</label>
+                <input type="password" id="login-senha" placeholder="••••••••" onkeydown="loginKeydown(event)">
+            </div>
+
+            <button class="login-btn" id="login-btn" onclick="fazerLogin()">🔑 Entrar</button>
+
+            <div class="login-error" id="login-erro"></div>
+            <div class="login-success" id="login-sucesso"></div>
+
+            <button class="btn-esqueci" onclick="esqueciSenha()">Esqueci minha senha</button>
+
+            <p class="login-security">🛡️ Acesso protegido por Firebase Authentication</p>
+        </div>
+    </div>
+
+    <!-- ══ SISTEMA (visível só após login) ═══════════════════════ -->
+    <div id="app-content" style="display:none">
+
+        <div id="loading">
+            <div class="spin"></div>
+            <p>Conectando ao banco de dados...</p>
+        </div>
+
+        <header>
+            <div class="logo">
+                <div class="logo-icon">🌱</div>
+                <div>
+                    <h1>Gabriel Gatti</h1>
+                    <p>Sistema de Vendas</p>
+                </div>
+            </div>
+            <div class="header-right">
+                <strong><span class="sync-dot"></span><span id="relogio"></span></strong>
+                CNPJ: 66.116.356/0001-01
+                <span class="user-badge" id="user-badge"></span>
+                <button class="btn-logout" onclick="window._signOut()">🚪 Sair</button>
+            </div>
+        </header>
+
+        <nav>
+            <button class="tab active" onclick="mudarTab('painel',this)">📊 Painel</button>
+            <button class="tab" onclick="mudarTab('nova',this)">➕ Nova Venda</button>
+            <button class="tab" onclick="mudarTab('historico',this)">📋 Histórico</button>
+            <button class="tab" onclick="mudarTab('semana',this)">📅 Semanal</button>
+            <button class="tab" onclick="mudarTab('meta',this)">🎯 Metas</button>
+            <button class="tab" onclick="mudarTab('config',this)">⚙️ Config</button>
+        </nav>
+
+        <div class="content">
+
+            <!-- PAINEL -->
+            <div class="panel active" id="tab-painel">
+                <div class="sec-title">Painel <span>Geral</span></div>
+                <div class="cards" id="cards-painel"></div>
+                <div class="box">
+                    <h2>🎯 Meta Mensal</h2>
+                    <div id="meta-painel"></div>
+                </div>
+                <div class="box">
+                    <h2>🕒 Últimas Vendas</h2>
+                    <div class="tbl-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Produto</th>
+                                    <th>Qtd</th>
+                                    <th>V.Unit</th>
+                                    <th>Total</th>
+                                    <th>Tipo</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbl-recentes"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NOVA VENDA -->
+            <div class="panel" id="tab-nova">
+                <div class="sec-title">➕ <span>Nova Venda</span></div>
+                <div class="box">
+                    <h2>📦 Dados do Produto</h2>
+                    <div class="fgrid">
+                        <div class="fg">
+                            <label>Tipo de Produto</label>
+                            <select id="produto-tipo" onchange="atualizarPreco()">
+                                <option value="turbinado">Turbinado</option>
+                                <option value="frutifero">Frutífero</option>
+                            </select>
+                        </div>
+                        <div class="fg">
+                            <label>Tipo de Venda</label>
+                            <select id="tipo-venda" onchange="atualizarPreco()">
+                                <option value="direta">Venda Direta</option>
+                                <option value="consorcio">consignado</option>
+                            </select>
+                        </div>
+                        <div class="fg">
+                            <label>Tamanho do Saco</label>
+                            <select id="tamanho" onchange="atualizarPreco()">
+                                <option value="1">1 kg</option>
+                                <option value="4">4 kg</option>
+                                <option value="50">50 kg</option>
+                                <option value="100">100 kg</option>
+                                <option value="outro">Outro</option>
+                            </select>
+                        </div>
+                        <div class="fg" id="fg-outro" style="display:none">
+                            <label>Peso (kg)</label>
+                            <input type="number" id="peso-outro" min="0.1" step="0.1" placeholder="Ex: 2.5">
+                        </div>
+                        <div class="fg">
+                            <label>Quantidade (unidades)</label>
+                            <input type="number" id="qtd" min="1" value="1" oninput="calcularTotal()">
+                        </div>
+                        <div class="fg">
+                            <label>Valor Unitário (R$)</label>
+                            <input type="number" id="valor-unit" step="0.01" placeholder="0,00" oninput="calcularTotal()">
+                        </div>
+                        <div class="fg">
+                            <label>Data da Venda</label>
+                            <input type="date" id="data-venda">
+                        </div>
+                    </div>
+                    <div class="fgrid">
+                        <div class="fg">
+                            <label>Cliente / Empresa</label>
+                            <input type="text" id="cliente" placeholder="Nome do cliente ou empresa">
+                        </div>
+                        <div class="fg">
+                            <label>Forma de Pagamento</label>
+                            <select id="pagamento">
+                                <option>Dinheiro</option>
+                                <option>PIX</option>
+                                <option>Cartão</option>
+                                <option>A prazo</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="fg" style="margin-bottom:18px">
+                        <label>Observações</label>
+                        <textarea id="obs" placeholder="Observações opcionais..."></textarea>
+                    </div>
+                    <div class="meta-box">
+                        <strong class="strong">Resumo da Venda</strong>
+                        <p id="resumo-txt">Preencha os campos acima para ver o resumo.</p>
+                    </div>
+                    <div class="btn-row">
+                        <button class="btn btn-primary" onclick="lancarVenda()">🚀 Lançar Venda</button>
+                        <button class="btn btn-ghost" onclick="limparForm()">🗑️ Limpar</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- HISTÓRICO -->
+            <div class="panel" id="tab-historico">
+                <div class="sec-title">📋 <span>Histórico de Vendas</span></div>
+                <div class="box" style="padding:16px 20px">
+                    <div class="btn-row">
+                        <button class="btn btn-info btn-sm" onclick="exportarPDF()">📄 Exportar PDF</button>
+                        <button class="btn btn-ghost btn-sm" onclick="exportarCSV()">📊 Exportar CSV</button>
+                        <input type="month" id="filtro-mes" onchange="renderHistorico()"
+                            style="background:rgba(255,255,255,.07);border:1px solid var(--borda);border-radius:8px;padding:7px 12px;color:var(--branco);font-family:'DM Sans',sans-serif;font-size:13px;outline:none">
+                    </div>
+                </div>
+                <div class="box">
+                    <div class="tbl-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Data</th>
+                                    <th>Cliente</th>
+                                    <th>Produto</th>
+                                    <th>Qtd</th>
+                                    <th>V.Unit</th>
+                                    <th>Total</th>
+                                    <th>Tipo</th>
+                                    <th>Pgto</th>
+                                    <th>Status</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbl-historico"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SEMANA -->
+            <div class="panel" id="tab-semana">
+                <div class="sec-title">📅 Monitoramento <span>Semanal</span></div>
+                <div class="cards" id="cards-semana"></div>
+                <div class="box">
+                    <h2>📆 Vendas por Dia (Semana Atual)</h2>
+                    <div class="week-grid" id="week-grid"></div>
+                </div>
+                <div class="box">
+                    <h2>📋 Vendas desta Semana</h2>
+                    <div class="tbl-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Cliente</th>
+                                    <th>Produto</th>
+                                    <th>Qtd</th>
+                                    <th>Total</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbl-semana"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="box">
+                    <h2>🔮 Previsão para Bater a Meta</h2>
+                    <div id="previsao-meta"></div>
+                </div>
+            </div>
+
+            <!-- METAS -->
+            <div class="panel" id="tab-meta">
+                <div class="sec-title">🎯 <span>Metas</span></div>
+                <div class="box">
+                    <h2>Definir Meta Mensal</h2>
+                    <div class="fgrid">
+                        <div class="fg"><label>Meta de Faturamento (R$)</label><input type="number" id="meta-valor"
+                                placeholder="Ex: 2000" oninput="salvarMeta()"></div>
+                        <div class="fg"><label>Meta de Unidades Vendidas</label><input type="number" id="meta-unidades"
+                                placeholder="Ex: 100" oninput="salvarMeta()"></div>
+                    </div>
+                </div>
+                <div class="box">
+                    <h2>📈 Progresso do Mês</h2>
+                    <div id="progresso-mes"></div>
+                </div>
+                <div class="box">
+                    <h2>🔮 Quanto preciso vender para bater a meta?</h2>
+                    <div id="previsao-geral"></div>
+                </div>
+            </div>
+
+            <!-- CONFIG -->
+            <div class="panel" id="tab-config">
+                <div class="box">
+                    <h2>💰 Preços dos Produtos</h2>
+                    <h3 style="color:var(--cinza);font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:18px 0 10px">⚡ Turbinado</h3>
+                    <div class="settings-grid">
+                        <div class="fg"><label>Preço Direto Turbinado – 1kg (R$)</label><input type="number" id="preco-1kg-d-t" step="0.01" value="9.00"></div>
+                        <div class="fg"><label>Preço Direto Turbinado – 4kg (R$)</label><input type="number" id="preco-4kg-d-t" step="0.01" value="25.00"></div>
+                        <div class="fg"><label>Consignado Turbinado – 1kg (R$)</label><input type="number" id="preco-1kg-c-t" step="0.01" value="12.00"></div>
+                        <div class="fg"><label>Consignado Turbinado – 4kg (R$)</label><input type="number" id="preco-4kg-c-t" step="0.01" value="20.00"></div>
+                        <div class="fg"><label>Custo Turbinado – 1kg (R$)</label><input type="number" id="custo-1kg-t" step="0.01" value="3.00"></div>
+                        <div class="fg"><label>Custo Turbinado – 4kg (R$)</label><input type="number" id="custo-4kg-t" step="0.01" value="7.00"></div>
+                    </div>
+                    <h3 style="color:var(--cinza);font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:18px 0 10px">🌳 Frutífero</h3>
+                    <div class="settings-grid">
+                        <div class="fg"><label>Preço Direto Frutífero – 1kg (R$)</label><input type="number" id="preco-1kg-d-f" step="0.01" value="12.00"></div>
+                        <div class="fg"><label>Preço Direto Frutífero – 4kg (R$)</label><input type="number" id="preco-4kg-d-f" step="0.01" value="7.00"></div>
+                        <div class="fg"><label>Consignado Frutífero – 1kg (R$)</label><input type="number" id="preco-1kg-c-f" step="0.01" value="35.00"></div>
+                        <div class="fg"><label>Consignado Frutífero – 4kg (R$)</label><input type="number" id="preco-4kg-c-f" step="0.01" value="20.00"></div>
+                        <div class="fg"><label>Custo Frutífero – 1kg (R$)</label><input type="number" id="custo-1kg-f" step="0.01" value="4.00"></div>
+                        <div class="fg"><label>Custo Frutífero – 4kg (R$)</label><input type="number" id="custo-4kg-f" step="0.01" value="8.00"></div>
+                    </div>
+                    <h3 style="color:var(--cinza);font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:18px 0 10px">📦 Embalagens Grandes</h3>
+                    <div class="settings-grid">
+                        <div class="fg"><label>Preço – 50kg (R$)</label><input type="number" id="preco-50kg" step="0.01" value="270.00"></div>
+                        <div class="fg"><label>Custo – 50kg (R$)</label><input type="number" id="custo-50kg" step="0.01" value="88.00"></div>
+                        <div class="fg"><label>Preço – 100kg (R$)</label><input type="number" id="preco-100kg" step="0.01" value="400.00"></div>
+                        <div class="fg"><label>Custo – 100kg (R$)</label><input type="number" id="custo-100kg" step="0.01" value="175.00"></div>
+                    </div>
+                    <div class="btn-row" style="margin-top:16px">
+                        <button class="btn btn-primary" onclick="salvarPrecos()">💾 Salvar Preços</button>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /content -->
+
+        <!-- MODAL CONFIRMAÇÃO -->
+        <div class="modal-bg" id="modal-bg">
+            <div class="modal">
+                <h3>🚀 Confirmar Venda</h3>
+                <p>Verifique os dados. Após confirmar, você e Gabriel serão notificados.</p>
+                <div class="modal-detail" id="modal-detail"></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="confirmarVenda()">✅ Confirmar</button>
+                    <button class="btn btn-danger" onclick="fecharModal()">❌ Cancelar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL EDITAR -->
+        <div class="modal-bg" id="modal-edit-bg">
+            <div class="modal" style="max-width:520px">
+                <h3>✏️ Editar Venda</h3>
+                <div class="fgrid" style="margin-top:14px">
+                    <div class="fg"><label>Quantidade</label><input type="number" id="edit-qtd" min="1"></div>
+                    <div class="fg"><label>Valor Unitário (R$)</label><input type="number" id="edit-valor" step="0.01"></div>
+                    <div class="fg"><label>Cliente</label><input type="text" id="edit-cliente"></div>
+                    <div class="fg"><label>Pagamento</label>
+                        <select id="edit-pgto">
+                            <option>Dinheiro</option>
+                            <option>PIX</option>
+                            <option>Cartão</option>
+                            <option>A prazo</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="fg" style="margin-bottom:16px"><label>Observações</label><textarea id="edit-obs"></textarea></div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="salvarEdicao()">💾 Salvar</button>
+                    <button class="btn btn-ghost" onclick="fecharEdit()">Cancelar</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="toast" id="toast"></div>
+
+        <script src="js/script.js"></script>
+
+    </div><!-- /app-content -->
+
+</body>
+</html>
