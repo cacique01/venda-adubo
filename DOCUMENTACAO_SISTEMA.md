@@ -804,117 +804,26 @@ O CSS usa **variáveis CSS** (`:root`) para centralizar as cores do tema:
 
 ## 5. Modo Manutenção — Como Funciona
 
-### O problema que ele resolve
+O modo de manutenção permite abrir a interface sem entrar na conta para
+inspecionar as abas. Ele não autentica o usuário nem libera acesso ao Firestore.
 
-Quando as **regras do Firestore** exigem autenticação para ler dados,
-o banco rejeita a conexão se você tentar acessar sem login. Isso fazia o
-sistema ficar preso na tela de loading infinitamente, sem mostrar nada.
+### Uso
 
-### Como o modo manutenção foi implementado
+- Ao abrir uma nova sessão do navegador, o modo de manutenção fica ativo e a
+  interface aparece com o usuário "Manutenção".
+- Sem login, as vendas e os gastos não são carregados, e não é possível lançar
+  vendas. Produtos e configurações locais continuam disponíveis.
+- O botão **Sair da conta** encerra o modo de manutenção nesta aba e mostra a
+  tela de login. Para entrar novamente, informe as credenciais Firebase.
+- A escolha de sair fica registrada em `sessionStorage` para não reabrir a
+  interface ao atualizar a mesma aba.
 
-**Passo 1 — A variável de controle:**
-```javascript
-// linha 55 do index.html
-const permitirAcessoSemLogin = true;
-```
-Essa linha é o "interruptor". `true` = acesso livre, `false` = requer login.
+### Segurança
 
-**Passo 2 — A verificação de acesso:**
-```javascript
-const usuarioLogado = !!user || permitirAcessoSemLogin;
-```
-Se `permitirAcessoSemLogin` for `true`, `usuarioLogado` sempre será `true`,
-independente de `user` ser null ou não.
-
-**Passo 3 — Dados do usuário em modo manutenção:**
-```javascript
-} else {
-    window._usuarioNome  = 'Manutenção';
-    window._usuarioAdmin = true;  // acesso total para fazer as configurações
-    window._usuarioEmail = '';
-}
-```
-Sem login, o sistema usa nome "Manutenção" com permissões de admin.
-
-**Passo 4 — Badge visual:**
-```javascript
-badge.textContent = user ? icon + ' ' + window._usuarioNome : '🔧 Modo Manutenção';
-```
-O cabeçalho mostra `🔧 Modo Manutenção` para identificar que o sistema
-está em modo de manutenção.
-
-**Passo 5 — Proteção contra loading infinito:**
-```javascript
-// Timeout de 6 segundos
-const loadingTimeout = setTimeout(() => {
-    loadingEl.style.display = 'none';
-    // renderiza telas vazias
-}, 6000);
-
-// Callback de erro do Firestore
-}, (err) => {
-    clearTimeout(loadingTimeout);
-    loadingEl.style.display = 'none';
-    window._vendas = [];
-    // renderiza telas vazias
-});
-```
-Mesmo que o Firestore rejeite a conexão (por não ter login), o sistema
-abre após no máximo 6 segundos.
-
-### Como ativar e desativar
-
-**Para usar em modo manutenção** (acesso sem login):
-```javascript
-// index.html, linha 55
-const permitirAcessoSemLogin = true;  // ← muda para true
-```
-
-**Para voltar ao modo normal** (exige login):
-```javascript
-// index.html, linha 55
-const permitirAcessoSemLogin = false;  // ← muda para false
-```
-
-### O que funciona em modo manutenção
-
-| Funcionalidade       | Funciona? | Observação                                      |
-|----------------------|-----------|-------------------------------------------------|
-| Acessar o sistema    | ✅        | Entra direto sem pedir senha                    |
-| Ver e editar preços  | ✅        | Preços salvos no localStorage, sem precisar do banco |
-| Ver vendas           | ⚠️        | Só se as regras do Firestore permitirem leitura sem login |
-| Lançar novas vendas  | ⚠️        | Só se as regras do Firestore permitirem escrita sem login |
-| Exportar PDF/CSV     | ⚠️        | Exporta, mas pode estar vazio se o banco não carregou |
-
-### Importante: Regras do Firestore
-
-Se quiser que o banco funcione **mesmo sem login** (para ver e lançar
-vendas em modo manutenção), é preciso temporariamente mudar as regras
-do Firestore no console do Firebase:
-
-```
-// Regras temporárias de manutenção (ATENÇÃO: deixa o banco público!)
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
-```
-
-**Após a manutenção, restaure as regras normais:**
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.auth != null;
-    }
-  }
-}
-```
+As vendas e os gastos só são consultados depois de autenticar no Firebase.
+Não altere as regras do Firestore para `allow read, write: if true`: isso
+permitiria acesso público aos dados. O modo de manutenção é apenas para
+inspecionar a interface e não substitui o login.
 
 ---
 
@@ -992,7 +901,10 @@ service cloud.firestore {
 | `produto`   | string    | 'turbinado' ou 'frutifero'          |
 | `tipo`      | string    | 'direta' ou 'consorcio'             |
 | `cliente`   | string    | Nome do cliente                     |
-| `vendedor`  | string    | Nome do usuário logado que lançou a venda |
+| `responsavel` | string  | Nome do responsável pela venda (campo já usado nos registros do banco) |
+| `vendedor`  | string    | Alias do responsável, mantido para compatibilidade com a aplicação |
+| `vendedorEmail` | string | E-mail Firebase usado para identificar o vendedor |
+| `vendedorUid` | string  | UID Firebase do usuário que lançou a venda |
 | `pagamento` | string    | Dinheiro, PIX, Cartão ou A prazo    |
 | `obs`       | string    | Observações opcionais               |
 | `status`    | string    | 'Confirmada' ou 'Cancelada'         |

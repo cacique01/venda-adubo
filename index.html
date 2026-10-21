@@ -40,6 +40,15 @@
               const app = initializeApp(firebaseConfig);
               const db = getFirestore(app);
               const auth = getAuth(app);
+              const USUARIOS = {
+                  'davi.246gol@gmail.com': { nome: 'Davi', admin: true },
+                  'gvgatti10@gmail.com': { nome: 'Gabriel', admin: true },
+                  'jamilefernandes2007@gmail.com': { nome: 'Jamile', admin: false }
+              };
+              let modoManutencao = sessionStorage.getItem('gg_modo_manutencao') !== 'off';
+              let unsubscribeVendas = null;
+              let unsubscribeGastos = null;
+              let loadingTimeout = null;
 
               // ── expor globalmente ──────────────────────────────────────
               window._db = db;
@@ -50,7 +59,25 @@
               window._updateDoc = updateDoc;
               window._doc = doc;
               window._serverTimestamp = serverTimestamp;
-              window._signOut = () => signOut(auth);
+              window._signOut = async () => {
+                  modoManutencao = false;
+                  sessionStorage.setItem('gg_modo_manutencao', 'off');
+                  try {
+                      await signOut(auth);
+                      if (!auth.currentUser) {
+                          document.getElementById('login-screen').classList.remove('hidden');
+                          document.getElementById('app-content').style.display = 'none';
+                      }
+                  } catch (error) {
+                      console.error('Erro ao sair:', error);
+                      alert('Não foi possível sair da conta: ' + error.message);
+                  }
+              };
+              window._resolverVendedor = (venda) => {
+                  const responsavel = (venda.responsavel || '').trim();
+                  const email = (venda.vendedorEmail || '').trim().toLowerCase();
+                  return responsavel || (email && USUARIOS[email]?.nome) || venda.vendedor || email || 'Não informado';
+              };
               window._vendas = [];
               window._gastos = [];
 
@@ -60,31 +87,26 @@
                   const loginScreen = document.getElementById('login-screen');
                   const appContent = document.getElementById('app-content');
                   const badge = document.getElementById('user-badge');
+                  const loadingEl = document.getElementById('loading');
 
-                  const usuarioLogado = !!user || MODO_MANUTENCAO; // REMOVER "|| MODO_MANUTENCAO"
+                  if (unsubscribeVendas) unsubscribeVendas();
+                  if (unsubscribeGastos) unsubscribeGastos();
+                  unsubscribeVendas = null;
+                  unsubscribeGastos = null;
+                  clearTimeout(loadingTimeout);
 
-                  if (usuarioLogado) {
-                      // Usuário autenticado
+                  if (user || modoManutencao) {
                       loginScreen.classList.add('hidden');
                       appContent.style.display = 'block';
 
-                      // Configura dados do usuário logado
-                      const USUARIOS = {
-                          'davi.246gol@gmail.com':        { nome: 'Davi',    admin: true,   },
-                          'gvgatti10@gmail.com':           { nome: 'Gabriel', admin: true  },
-                          'jamilefernandes2007@gmail.com': { nome: 'Jamile',  admin: false }
-                      };
-                      if (user && USUARIOS[user.email]) {
-                          window._usuarioNome  = USUARIOS[user.email].nome;
-                          window._usuarioAdmin = USUARIOS[user.email].admin;
-                          window._usuarioEmail = user.email;
-                      } else if (user){
-                          window._usuarioNome  = user.email;
-                          window._usuarioAdmin = false;
-                          window._usuarioEmail = user.email;
+                      if (user) {
+                          const email = (user.email || '').toLowerCase();
+                          window._usuarioNome = USUARIOS[email]?.nome || user.email || 'Usuário';
+                          window._usuarioAdmin = USUARIOS[email]?.admin || false;
+                          window._usuarioEmail = user.email || '';
                       } else {
                           window._usuarioNome = 'Manutenção';
-                          window._usuarioAdmin = true;
+                          window._usuarioAdmin = false;
                           window._usuarioEmail = '';
                       }
 
@@ -92,9 +114,19 @@
                           badge.innerHTML = `<i class="ui-icon" data-lucide="${window._usuarioAdmin ? 'crown' : 'user-round'}" aria-hidden="true"></i> ${window._usuarioNome}`;
                       }
 
-                      // Timeout de segurança: se o Firestore não responder em 6s, esconde o loading mesmo assim
-                      const loadingEl = document.getElementById('loading');
-                      const loadingTimeout = setTimeout(() => {
+                      if (!user) {
+                          window._vendas = [];
+                          window._gastos = [];
+                          if (loadingEl) loadingEl.style.display = 'none';
+                          if (typeof window.renderPainel === 'function') window.renderPainel();
+                          if (typeof window.renderHistorico === 'function') window.renderHistorico();
+                          if (typeof window.renderSemana === 'function') window.renderSemana();
+                          if (typeof window.renderMeta === 'function') window.renderMeta();
+                          if (typeof window.renderGastos === 'function') window.renderGastos();
+                          return;
+                      }
+
+                      loadingTimeout = setTimeout(() => {
                           if (loadingEl) {
                               loadingEl.style.display = 'none';
                               console.warn('Firestore demorou demais — loading escondido por timeout.');
@@ -106,7 +138,7 @@
                       }, 6000);
 
                       const q = query(collection(db, "vendas"), orderBy("criadoEm", "desc"));
-                      onSnapshot(q, (snap) => {
+                      unsubscribeVendas = onSnapshot(q, (snap) => {
                           clearTimeout(loadingTimeout);
                           window._vendas = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
                           if (typeof window.renderPainel === 'function') window.renderPainel();
@@ -127,7 +159,7 @@
 
                       // ── listener de gastos ─────────────────────────────
                       const qGastos = query(collection(db, "gastos"), orderBy("criadoEm", "desc"));
-                      onSnapshot(qGastos, (snap) => {
+                      unsubscribeGastos = onSnapshot(qGastos, (snap) => {
                           window._gastos = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
                           if (typeof window.renderPainel === 'function') window.renderPainel();
                           if (typeof window.renderGastos === 'function') window.renderGastos();
@@ -141,6 +173,11 @@
                       loginScreen.classList.remove('hidden');
                       appContent.style.display = 'none';
                       if (badge) badge.textContent = '';
+                      window._usuarioNome = '';
+                      window._usuarioAdmin = false;
+                      window._usuarioEmail = '';
+                      window._vendas = [];
+                      window._gastos = [];
                   }
               });
 
@@ -369,9 +406,9 @@
           ></strong>
           CNPJ: 66.116.356/0001-01
           <span class="user-badge" id="user-badge"></span>
-          <button class="btn-logout" onclick="window._signOut()">
+          <button class="btn-logout" type="button" aria-label="Sair da conta" title="Sair da conta" onclick="window._signOut()">
             <i class="ui-icon" data-lucide="log-out" aria-hidden="true"></i>
-            Sair
+            Sair da conta
           </button>
         </div>
       </header>
@@ -506,9 +543,7 @@
                     <th>Data</th>
                     <th>Produto</th>
                     <th>Qtd</th>
-                    <th>V.Unit</th>
                     <th>Total</th>
-                    <th>Tipo</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -731,9 +766,7 @@
                     <th>Vendedor</th>
                     <th>Produto</th>
                     <th>Qtd</th>
-                    <th>V.Unit</th>
                     <th>Total</th>
-                    <th>Tipo</th>
                     <th>Pgto</th>
                     <th>Status</th>
                     <th>Ações</th>

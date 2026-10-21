@@ -293,10 +293,15 @@ function lancarVenda() {
         custo: i.custo, subtotal: +(i.qtd * i.unit).toFixed(2)
     }));
 
-    const vendedor = window._usuarioNome || window._usuarioEmail;
-    if (!vendedor) return toast('Não foi possível identificar o usuário logado.', 'err');
+    const usuario = window._auth?.currentUser;
+    if (!usuario?.email) return toast('Faça login para identificar o vendedor e lançar a venda.', 'err');
+    const vendedor = window._resolverVendedor({ vendedorEmail: usuario.email });
 
-    vendaPendente = { data, itens, total, cliente: cli, vendedor, pagamento: pgto, obs, status: 'Confirmada' };
+    vendaPendente = {
+        data, itens, total, cliente: cli, responsavel: vendedor, vendedor,
+        vendedorEmail: usuario.email, vendedorUid: usuario.uid,
+        pagamento: pgto, obs, status: 'Confirmada'
+    };
 
     el('modal-detail').innerHTML = `
         <p>${iconeMarkup('user-round')} Cliente: <span>${cli}</span></p>
@@ -422,11 +427,10 @@ window.renderPainel = function () {
         const label = itens.length > 1 ? `${itens.length} produtos` : (itens[0]?.nome || produtoLabel(v));
         return `<tr>
         <td>${formatarData(v.data)}</td><td>${label}</td><td>${qtdVenda(v)}</td>
-        <td>—</td><td><strong>R$ ${v.total.toFixed(2)}</strong></td>
-        <td>${v.tipo === 'direta' ? 'Direta' : v.tipo === 'consorcio' ? 'Consignado' : '—'}</td>
+        <td><strong>R$ ${v.total.toFixed(2)}</strong></td>
         <td><span class="badge ${(v.status || 'Confirmada') === 'Confirmada' ? 'badge-ok' : 'badge-cancel'}">${v.status || 'Confirmada'}</span></td>
     </tr>`;
-    }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--cinza);padding:20px">Nenhuma venda registrada.</td></tr>';
+    }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--cinza);padding:20px">Nenhuma venda registrada.</td></tr>';
 };
 
 // ── histórico ─────────────────────────────────────────────────────
@@ -441,11 +445,10 @@ window.renderHistorico = function () {
                 : (itens[0]?.nome || produtoLabel(v));
             return `<tr>
             <td>${i + 1}</td><td>${formatarData(v.data)}</td><td>${v.cliente || '–'}</td>
-            <td>${v.vendedor || '–'}</td>
+            <td>${window._resolverVendedor(v)}</td>
             <td style="max-width:200px;white-space:normal;font-size:12px">${label}</td>
             <td>${qtdVenda(v)}</td>
-            <td>—</td><td><strong>R$ ${v.total.toFixed(2)}</strong></td>
-            <td>${v.tipo === 'direta' ? 'Direta' : v.tipo === 'consorcio' ? 'Consignado' : '—'}</td>
+            <td><strong>R$ ${v.total.toFixed(2)}</strong></td>
             <td>${v.pagamento || '–'}</td>
             <td><span class="badge ${(v.status || 'Confirmada') === 'Confirmada' ? 'badge-ok' : 'badge-cancel'}">${v.status || 'Confirmada'}</span></td>
             <td><div class="btn-row">
@@ -457,7 +460,7 @@ window.renderHistorico = function () {
             </div></td>
         </tr>`;
         }).join('')
-        : '<tr><td colspan="12" style="text-align:center;color:var(--cinza);padding:20px">Nenhuma venda encontrada.</td></tr>';
+        : '<tr><td colspan="10" style="text-align:center;color:var(--cinza);padding:20px">Nenhuma venda encontrada.</td></tr>';
 };
 
 // ── semana ────────────────────────────────────────────────────────
@@ -659,8 +662,8 @@ function exportarPDF() {
     let y = 44;
     doc.setFillColor(26, 107, 60); doc.rect(14, y - 5, 182, 7, 'F');
     doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
-    ['Data', 'Cliente', 'Produto', 'Qtd', 'V.Unit', 'Total', 'Tipo', 'Status'].forEach((h, i) => {
-        doc.text(h, [14, 42, 80, 108, 120, 136, 152, 168][i], y);
+    ['Data', 'Cliente', 'Produto', 'Qtd', 'Total', 'Status'].forEach((h, i) => {
+        doc.text(h, [14, 42, 80, 108, 136, 168][i], y);
     });
     doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); y += 8;
 
@@ -674,9 +677,7 @@ function exportarPDF() {
         doc.text((v.cliente || '').substring(0, 18), 42, y);
         doc.text(labelProd.substring(0, 22), 80, y);
         doc.text(String(qtdVenda(v)), 108, y);
-        doc.text('—', 120, y);
         doc.text('R$' + v.total.toFixed(2), 136, y);
-        doc.text(v.tipo === 'direta' ? 'Direta' : v.tipo ? 'Cons.' : '—', 152, y);
         doc.text(v.status || 'Confirmada', 168, y);
         y += 7;
     });
@@ -691,7 +692,7 @@ function exportarCSV() {
     const rows = lista.map(v => {
         const itens = vendaItens(v);
         const labelProd = itens.map(i => `${i.nome} x${i.qtd}`).join(' | ');
-        return `${v.data},"${v.cliente || ''}","${v.vendedor || ''}","${labelProd}",${qtdVenda(v)},${v.total},${v.pagamento || ''},${v.status || 'Confirmada'}`;
+        return `${v.data},"${v.cliente || ''}","${window._resolverVendedor(v)}","${labelProd}",${qtdVenda(v)},${v.total},${v.pagamento || ''},${v.status || 'Confirmada'}`;
     }).join('\n');
     const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -790,7 +791,7 @@ function renderNF(v) {
             </div>
             <div style="background:#f9fafb;border-radius:8px;padding:10px 14px">
                 <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700;margin-bottom:4px">Vendedor</div>
-                <div style="font-size:14px;font-weight:600;color:#111">${v.vendedor || 'Não informado'}</div>
+                <div style="font-size:14px;font-weight:600;color:#111">${window._resolverVendedor(v)}</div>
             </div>
         </div>
 
@@ -908,7 +909,7 @@ function gerarPDFNF() {
     doc.text('PAGAMENTO', 18, y + 6); doc.text('VENDEDOR', 116, y + 6);
     doc.setTextColor(17, 17, 17); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
     doc.text(v.pagamento || 'Não informado', 18, y + 14);
-    doc.text(v.vendedor || 'Não informado', 116, y + 14);
+    doc.text(window._resolverVendedor(v), 116, y + 14);
 
     // Obs
     if (v.obs) {
