@@ -667,6 +667,15 @@
                     />
                   </div>
                   <div class="fg">
+                    <label>Telefone do Cliente (opcional)</label>
+                    <input
+                      type="tel"
+                      id="telefone"
+                      inputmode="numeric"
+                      placeholder="5565999999999"
+                    />
+                  </div>
+                  <div class="fg">
                     <label>Forma de Pagamento</label>
                     <select id="pagamento">
                       <option>Dinheiro</option>
@@ -763,6 +772,7 @@
                     <th>#</th>
                     <th>Data</th>
                     <th>Cliente</th>
+                    <th>Telefone</th>
                     <th>Vendedor</th>
                     <th>Produto</th>
                     <th>Qtd</th>
@@ -1205,6 +1215,9 @@
             </div>
             <div class="fg">
               <label>Cliente</label><input type="text" id="edit-cliente" />
+            </div>
+            <div class="fg">
+              <label>Telefone</label><input type="tel" id="edit-telefone" inputmode="numeric" placeholder="5565999999999" />
             </div>
             <div class="fg">
               <label>Pagamento</label>
