@@ -951,4 +951,4 @@ function gerarPDFNF() {
     if (el('filtro-mes')) el('filtro-mes').value = hoje.slice(0, 7);
     renderGradeProdutos();
     renderCarrinho();
-})();
+})();
