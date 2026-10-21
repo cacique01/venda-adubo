@@ -55,21 +55,19 @@
         window._gastos = [];
 
         // ── controle de autenticação ───────────────────────────────
-        const permitirAcessoSemLogin = true;
-
         onAuthStateChanged(auth, (user) => {
             const loginScreen = document.getElementById('login-screen');
             const appContent = document.getElementById('app-content');
             const badge = document.getElementById('user-badge');
 
-            const usuarioLogado = !!user || permitirAcessoSemLogin;
+            const usuarioLogado = !!user;
 
             if (usuarioLogado) {
-                // Usuário autenticado ou acesso liberado para manutenção
+                // Usuário autenticado
                 loginScreen.classList.add('hidden');
                 appContent.style.display = 'block';
 
-                // Configura dados do usuário logado (ou padrão de manutenção)
+                // Configura dados do usuário logado
                 const USUARIOS = {
                     'davi.246gol@gmail.com':        { nome: 'Davi',    admin: true  },
                     'gvgatti10@gmail.com':           { nome: 'Gabriel', admin: true  },
@@ -79,21 +77,14 @@
                     window._usuarioNome  = USUARIOS[user.email].nome;
                     window._usuarioAdmin = USUARIOS[user.email].admin;
                     window._usuarioEmail = user.email;
-                } else if (user) {
+                } else {
                     window._usuarioNome  = user.email;
                     window._usuarioAdmin = false;
                     window._usuarioEmail = user.email;
-                } else {
-                    // Acesso sem login (modo manutenção)
-                    window._usuarioNome  = 'Manutenção';
-                    window._usuarioAdmin = true;
-                    window._usuarioEmail = '';
                 }
 
                 if (badge) {
-                    badge.innerHTML = user
-                        ? `<i class="ui-icon" data-lucide="${window._usuarioAdmin ? 'crown' : 'user-round'}" aria-hidden="true"></i> ${window._usuarioNome}`
-                        : '<i class="ui-icon" data-lucide="wrench" aria-hidden="true"></i> Modo Manutenção';
+                    badge.innerHTML = `<i class="ui-icon" data-lucide="${window._usuarioAdmin ? 'crown' : 'user-round'}" aria-hidden="true"></i> ${window._usuarioNome}`;
                 }
 
                 // Timeout de segurança: se o Firestore não responder em 6s, esconde o loading mesmo assim
