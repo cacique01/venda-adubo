@@ -44,42 +44,105 @@
         window._db = db;
         window._auth = auth;
         window._col = collection(db, "vendas");
+        window._colGastos = collection(db, "gastos");
         window._addDoc = addDoc;
         window._updateDoc = updateDoc;
         window._doc = doc;
         window._serverTimestamp = serverTimestamp;
         window._signOut = () => signOut(auth);
         window._vendas = [];
+        window._gastos = [];
 
         // ── controle de autenticação ───────────────────────────────
+        const permitirAcessoSemLogin = true;
+
         onAuthStateChanged(auth, (user) => {
             const loginScreen = document.getElementById('login-screen');
             const appContent = document.getElementById('app-content');
+            const badge = document.getElementById('user-badge');
 
-            if (user) {
-                // Usuário logado — esconde login, mostra sistema
+            const usuarioLogado = !!user || permitirAcessoSemLogin;
+
+            if (usuarioLogado) {
+                // Usuário autenticado ou acesso liberado para manutenção
                 loginScreen.classList.add('hidden');
                 appContent.style.display = 'block';
 
-                // Mostra email do usuário no header
-                const badge = document.getElementById('user-badge');
-                if (badge) badge.textContent = '🔒 ' + user.email;
+                // Configura dados do usuário logado (ou padrão de manutenção)
+                const USUARIOS = {
+                    'davi.246gol@gmail.com':        { nome: 'Davi',    admin: true  },
+                    'gvgatti10@gmail.com':           { nome: 'Gabriel', admin: true  },
+                    'jamilefernandes2007@gmail.com': { nome: 'Jamile',  admin: false }
+                };
+                if (user && USUARIOS[user.email]) {
+                    window._usuarioNome  = USUARIOS[user.email].nome;
+                    window._usuarioAdmin = USUARIOS[user.email].admin;
+                    window._usuarioEmail = user.email;
+                } else if (user) {
+                    window._usuarioNome  = user.email;
+                    window._usuarioAdmin = false;
+                    window._usuarioEmail = user.email;
+                } else {
+                    // Acesso sem login (modo manutenção)
+                    window._usuarioNome  = 'Manutenção';
+                    window._usuarioAdmin = true;
+                    window._usuarioEmail = '';
+                }
 
-                // Inicia listener do Firestore somente após login
+                if (badge) {
+                    const icon = window._usuarioAdmin ? '👑' : '👤';
+                    badge.textContent = user ? icon + ' ' + window._usuarioNome : '🔧 Modo Manutenção';
+                }
+
+                // Timeout de segurança: se o Firestore não responder em 6s, esconde o loading mesmo assim
+                const loadingEl = document.getElementById('loading');
+                const loadingTimeout = setTimeout(() => {
+                    if (loadingEl) {
+                        loadingEl.style.display = 'none';
+                        console.warn('Firestore demorou demais — loading escondido por timeout.');
+                    }
+                    if (typeof window.renderPainel === 'function') window.renderPainel();
+                    if (typeof window.renderHistorico === 'function') window.renderHistorico();
+                    if (typeof window.renderSemana === 'function') window.renderSemana();
+                    if (typeof window.renderMeta === 'function') window.renderMeta();
+                }, 6000);
+
                 const q = query(collection(db, "vendas"), orderBy("criadoEm", "desc"));
                 onSnapshot(q, (snap) => {
+                    clearTimeout(loadingTimeout);
                     window._vendas = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
                     if (typeof window.renderPainel === 'function') window.renderPainel();
                     if (typeof window.renderHistorico === 'function') window.renderHistorico();
                     if (typeof window.renderSemana === 'function') window.renderSemana();
                     if (typeof window.renderMeta === 'function') window.renderMeta();
-                    document.getElementById('loading').style.display = 'none';
+                    if (loadingEl) loadingEl.style.display = 'none';
+                }, (err) => {
+                    clearTimeout(loadingTimeout);
+                    console.error('Firestore erro:', err.code, err.message);
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    window._vendas = [];
+                    if (typeof window.renderPainel === 'function') window.renderPainel();
+                    if (typeof window.renderHistorico === 'function') window.renderHistorico();
+                    if (typeof window.renderSemana === 'function') window.renderSemana();
+                    if (typeof window.renderMeta === 'function') window.renderMeta();
+                });
+
+                // ── listener de gastos ─────────────────────────────
+                const qGastos = query(collection(db, "gastos"), orderBy("criadoEm", "desc"));
+                onSnapshot(qGastos, (snap) => {
+                    window._gastos = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+                    if (typeof window.renderPainel === 'function') window.renderPainel();
+                    if (typeof window.renderGastos === 'function') window.renderGastos();
+                }, (err) => {
+                    console.error('Gastos erro:', err.code, err.message);
+                    window._gastos = [];
                 });
 
             } else {
                 // Não logado — mostra tela de login
                 loginScreen.classList.remove('hidden');
                 appContent.style.display = 'none';
+                if (badge) badge.textContent = '';
             }
         });
 
@@ -195,7 +258,27 @@
 
         <header>
             <div class="logo">
-                <div class="logo-icon">🌱</div>
+                <div class="logo-menu-wrap">
+                    <button class="logo-icon logo-menu-trigger" type="button" aria-label="Abrir menu extra" aria-expanded="false" onclick="toggleLogoMenu()">🌱</button>
+                    <div class="logo-menu" id="logo-menu">
+                        <button class="tab" data-icon="📋" onclick="toggleLogoMenu(); mudarTab('historico',this)">
+                            <span class="tab-text">📋 Histórico</span>
+                            <span class="tab-label">Histórico</span>
+                        </button>
+                        <button class="tab" data-icon="📅" onclick="toggleLogoMenu(); mudarTab('semana',this)">
+                            <span class="tab-text">📅 Semanal</span>
+                            <span class="tab-label">Semanal</span>
+                        </button>
+                        <button class="tab" data-icon="🎯" onclick="toggleLogoMenu(); mudarTab('meta',this)">
+                            <span class="tab-text">🎯 Metas</span>
+                            <span class="tab-label">Metas</span>
+                        </button>
+                        <button class="tab" data-icon="⚙️" onclick="toggleLogoMenu(); mudarTab('config',this)">
+                            <span class="tab-text">⚙️ Pré-definidos</span>
+                            <span class="tab-label">Pré-def.</span>
+                        </button>
+                    </div>
+                </div>
                 <div>
                     <h1>Gabriel Gatti</h1>
                     <p>Sistema de Vendas</p>
@@ -210,12 +293,34 @@
         </header>
 
         <nav>
-            <button class="tab active" onclick="mudarTab('painel',this)">📊 Painel</button>
-            <button class="tab" onclick="mudarTab('nova',this)">➕ Nova Venda</button>
-            <button class="tab" onclick="mudarTab('historico',this)">📋 Histórico</button>
-            <button class="tab" onclick="mudarTab('semana',this)">📅 Semanal</button>
-            <button class="tab" onclick="mudarTab('meta',this)">🎯 Metas</button>
-            <button class="tab" onclick="mudarTab('config',this)">⚙️ Config</button>
+            <button class="tab mobile-fixed active" data-icon="📊" onclick="mudarTab('painel',this)">
+                <span class="tab-text">📊 Painel</span>
+                <span class="tab-label">Painel</span>
+            </button>
+            <button class="tab mobile-fixed" data-icon="💰" onclick="mudarTab('nova',this)">
+                <span class="tab-text">💰 Venda</span>
+                <span class="tab-label">Venda</span>
+            </button>
+            <button class="tab" data-icon="📋" onclick="mudarTab('historico',this)">
+                <span class="tab-text">📋 Histórico</span>
+                <span class="tab-label">Histórico</span>
+            </button>
+            <button class="tab" data-icon="📅" onclick="mudarTab('semana',this)">
+                <span class="tab-text">📅 Semanal</span>
+                <span class="tab-label">Semanal</span>
+            </button>
+            <button class="tab" data-icon="🎯" onclick="mudarTab('meta',this)">
+                <span class="tab-text">🎯 Metas</span>
+                <span class="tab-label">Metas</span>
+            </button>
+            <button class="tab mobile-fixed" data-icon="💸" onclick="mudarTab('gastos',this)">
+                <span class="tab-text">💸 Gastos</span>
+                <span class="tab-label">Gastos</span>
+            </button>
+            <button class="tab" data-icon="⚙️" onclick="mudarTab('config',this)">
+                <span class="tab-text">⚙️ Pré-definidos</span>
+                <span class="tab-label">Pré-def.</span>
+            </button>
         </nav>
 
         <div class="content">
@@ -249,79 +354,65 @@
                 </div>
             </div>
 
-            <!-- NOVA VENDA -->
+            <!-- VENDA -->
             <div class="panel" id="tab-nova">
-                <div class="sec-title">➕ <span>Nova Venda</span></div>
-                <div class="box">
-                    <h2>📦 Dados do Produto</h2>
-                    <div class="fgrid">
-                        <div class="fg">
-                            <label>Tipo de Produto</label>
-                            <select id="produto-tipo" onchange="atualizarPreco()">
-                                <option value="turbinado">Turbinado</option>
-                                <option value="frutifero">Frutífero</option>
-                            </select>
-                        </div>
-                        <div class="fg">
-                            <label>Tipo de Venda</label>
-                            <select id="tipo-venda" onchange="atualizarPreco()">
-                                <option value="direta">Venda Direta</option>
-                                <option value="consorcio">consignado</option>
-                            </select>
-                        </div>
-                        <div class="fg">
-                            <label>Tamanho do Saco</label>
-                            <select id="tamanho" onchange="atualizarPreco()">
-                                <option value="1">1 kg</option>
-                                <option value="4">4 kg</option>
-                                <option value="50">50 kg</option>
-                                <option value="100">100 kg</option>
-                                <option value="outro">Outro</option>
-                            </select>
-                        </div>
-                        <div class="fg" id="fg-outro" style="display:none">
-                            <label>Peso (kg)</label>
-                            <input type="number" id="peso-outro" min="0.1" step="0.1" placeholder="Ex: 2.5">
-                        </div>
-                        <div class="fg">
-                            <label>Quantidade (unidades)</label>
-                            <input type="number" id="qtd" min="1" value="1" oninput="calcularTotal()">
-                        </div>
-                        <div class="fg">
-                            <label>Valor Unitário (R$)</label>
-                            <input type="number" id="valor-unit" step="0.01" placeholder="0,00" oninput="calcularTotal()">
-                        </div>
-                        <div class="fg">
-                            <label>Data da Venda</label>
-                            <input type="date" id="data-venda">
+                <div class="sec-title">💰 <span>Nova Venda</span></div>
+
+                <div class="venda-layout">
+                    <!-- COLUNA ESQUERDA: Catálogo -->
+                    <div class="venda-col-prod">
+                        <div class="box">
+                            <h2>📦 Produtos</h2>
+                            <p style="color:var(--cinza);font-size:13px;margin-bottom:14px">Toque para adicionar ao carrinho.</p>
+                            <div id="grade-produtos" class="grade-produtos"></div>
                         </div>
                     </div>
-                    <div class="fgrid">
-                        <div class="fg">
-                            <label>Cliente / Empresa</label>
-                            <input type="text" id="cliente" placeholder="Nome do cliente ou empresa">
+
+                    <!-- COLUNA DIREITA: Carrinho + Dados -->
+                    <div class="venda-col-cart">
+                        <!-- Carrinho -->
+                        <div class="box" id="box-carrinho">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                                <h2 style="margin:0">🛒 Carrinho</h2>
+                                <button class="btn btn-ghost btn-sm" onclick="limparCarrinho()">🗑️ Limpar</button>
+                            </div>
+                            <div id="lista-carrinho">
+                                <p style="color:var(--cinza);font-size:13px;text-align:center;padding:20px 0">Nenhum produto adicionado.</p>
+                            </div>
+                            <div id="carrinho-total" style="display:none;padding:10px 0 0;border-top:1px solid var(--borda);text-align:right;font-size:16px;font-weight:800;color:var(--neon)"></div>
                         </div>
-                        <div class="fg">
-                            <label>Forma de Pagamento</label>
-                            <select id="pagamento">
-                                <option>Dinheiro</option>
-                                <option>PIX</option>
-                                <option>Cartão</option>
-                                <option>A prazo</option>
-                            </select>
+
+                        <!-- Dados da Venda -->
+                        <div class="box">
+                            <h2>📝 Dados da Venda</h2>
+                            <div class="fgrid">
+                                <div class="fg">
+                                    <label>Cliente / Empresa</label>
+                                    <input type="text" id="cliente" placeholder="Nome do cliente ou empresa">
+                                </div>
+                                <div class="fg">
+                                    <label>Forma de Pagamento</label>
+                                    <select id="pagamento">
+                                        <option>Dinheiro</option>
+                                        <option>PIX</option>
+                                        <option>Cartão</option>
+                                        <option>A prazo</option>
+                                    </select>
+                                </div>
+                                <div class="fg">
+                                    <label>Data da Venda</label>
+                                    <input type="date" id="data-venda">
+                                </div>
+                            </div>
+                            <div class="fg" style="margin-bottom:18px">
+                                <label>Observações (opcional)</label>
+                                <textarea id="obs" placeholder="Observações opcionais..."></textarea>
+                            </div>
+                            <div class="btn-row">
+                                <button class="btn btn-primary" onclick="lancarVenda()">🚀 Lançar Venda</button>
+                                <button class="btn btn-ghost" onclick="limparForm()">🗑️ Limpar Tudo</button>
+                            </div>
                         </div>
-                    </div>
-                    <div class="fg" style="margin-bottom:18px">
-                        <label>Observações</label>
-                        <textarea id="obs" placeholder="Observações opcionais..."></textarea>
-                    </div>
-                    <div class="meta-box">
-                        <strong class="strong">Resumo da Venda</strong>
-                        <p id="resumo-txt">Preencha os campos acima para ver o resumo.</p>
-                    </div>
-                    <div class="btn-row">
-                        <button class="btn btn-primary" onclick="lancarVenda()">🚀 Lançar Venda</button>
-                        <button class="btn btn-ghost" onclick="limparForm()">🗑️ Limpar</button>
                     </div>
                 </div>
             </div>
@@ -415,42 +506,93 @@
                 </div>
             </div>
 
-            <!-- CONFIG -->
-            <div class="panel" id="tab-config">
+            <!-- GASTOS -->
+            <div class="panel" id="tab-gastos">
+                <div class="sec-title">💸 <span>Gastos Variáveis</span></div>
+
+                <!-- Formulário de novo gasto -->
                 <div class="box">
-                    <h2>💰 Preços dos Produtos</h2>
-                    <h3 style="color:var(--cinza);font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:18px 0 10px">⚡ Turbinado</h3>
-                    <div class="settings-grid">
-                        <div class="fg"><label>Preço Direto Turbinado – 1kg (R$)</label><input type="number" id="preco-1kg-d-t" step="0.01" value="9.00"></div>
-                        <div class="fg"><label>Preço Direto Turbinado – 4kg (R$)</label><input type="number" id="preco-4kg-d-t" step="0.01" value="25.00"></div>
-                        <div class="fg"><label>Consignado Turbinado – 1kg (R$)</label><input type="number" id="preco-1kg-c-t" step="0.01" value="12.00"></div>
-                        <div class="fg"><label>Consignado Turbinado – 4kg (R$)</label><input type="number" id="preco-4kg-c-t" step="0.01" value="20.00"></div>
-                        <div class="fg"><label>Custo Turbinado – 1kg (R$)</label><input type="number" id="custo-1kg-t" step="0.01" value="3.00"></div>
-                        <div class="fg"><label>Custo Turbinado – 4kg (R$)</label><input type="number" id="custo-4kg-t" step="0.01" value="7.00"></div>
+                    <h2>➕ Registrar Gasto</h2>
+                    <p style="color:var(--cinza);font-size:13px;margin-bottom:16px">A data é registrada automaticamente no momento do lançamento.</p>
+                    <div class="fgrid">
+                        <div class="fg" style="grid-column:1/-1">
+                            <label>Nome do Gasto</label>
+                            <input type="text" id="gasto-nome" placeholder="Ex: Gasolina, Calcário, Esterco extra...">
+                        </div>
+                        <div class="fg">
+                            <label>Quantidade</label>
+                            <input type="number" id="gasto-qtd" value="1" min="1" step="1">
+                        </div>
+                        <div class="fg">
+                            <label>Valor (R$)</label>
+                            <input type="number" id="gasto-valor" step="0.01" min="0" placeholder="0,00">
+                        </div>
                     </div>
-                    <h3 style="color:var(--cinza);font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:18px 0 10px">🌳 Frutífero</h3>
-                    <div class="settings-grid">
-                        <div class="fg"><label>Preço Direto Frutífero – 1kg (R$)</label><input type="number" id="preco-1kg-d-f" step="0.01" value="12.00"></div>
-                        <div class="fg"><label>Preço Direto Frutífero – 4kg (R$)</label><input type="number" id="preco-4kg-d-f" step="0.01" value="7.00"></div>
-                        <div class="fg"><label>Consignado Frutífero – 1kg (R$)</label><input type="number" id="preco-1kg-c-f" step="0.01" value="35.00"></div>
-                        <div class="fg"><label>Consignado Frutífero – 4kg (R$)</label><input type="number" id="preco-4kg-c-f" step="0.01" value="20.00"></div>
-                        <div class="fg"><label>Custo Frutífero – 1kg (R$)</label><input type="number" id="custo-1kg-f" step="0.01" value="4.00"></div>
-                        <div class="fg"><label>Custo Frutífero – 4kg (R$)</label><input type="number" id="custo-4kg-f" step="0.01" value="8.00"></div>
+                    <div class="btn-row" style="margin-top:4px">
+                        <button class="btn btn-primary" onclick="lancarGasto()">💾 Registrar Gasto</button>
                     </div>
-                    <h3 style="color:var(--cinza);font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:18px 0 10px">📦 Embalagens Grandes</h3>
-                    <div class="settings-grid">
-                        <div class="fg"><label>Preço – 50kg (R$)</label><input type="number" id="preco-50kg" step="0.01" value="270.00"></div>
-                        <div class="fg"><label>Custo – 50kg (R$)</label><input type="number" id="custo-50kg" step="0.01" value="88.00"></div>
-                        <div class="fg"><label>Preço – 100kg (R$)</label><input type="number" id="preco-100kg" step="0.01" value="400.00"></div>
-                        <div class="fg"><label>Custo – 100kg (R$)</label><input type="number" id="custo-100kg" step="0.01" value="175.00"></div>
+                </div>
+
+                <!-- Lista de gastos do mês -->
+                <div class="box">
+                    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+                        <h2 style="margin:0">📋 Gastos deste Mês</h2>
+                        <span id="gastos-total-mes" style="font-size:14px;font-weight:700;color:var(--vermelho)">Total do mês: R$ 0,00</span>
                     </div>
-                    <div class="btn-row" style="margin-top:16px">
-                        <button class="btn btn-primary" onclick="salvarPrecos()">💾 Salvar Preços</button>
+                    <div id="lista-gastos">
+                        <p style="color:var(--cinza);font-size:13px;text-align:center;padding:30px 0">Nenhum gasto registrado este mês.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PRÉ-DEFINIDOS -->
+            <div class="panel" id="tab-config">
+                <div class="sec-title">⚙️ <span>Pré-definidos</span></div>
+                <div class="box">
+                    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+                        <div>
+                            <h2 style="margin:0">📦 Produtos Cadastrados</h2>
+                            <p style="color:var(--cinza);font-size:13px;margin-top:4px">Gerencie os produtos disponíveis para venda.</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="abrirFormProduto()">＋ Novo Produto</button>
+                    </div>
+                    <div id="lista-predefinidos" class="lista-predefinidos">
+                        <!-- preenchido por renderPredefinidos() -->
                     </div>
                 </div>
             </div>
 
         </div><!-- /content -->
+
+        <!-- MODAL PRODUTO (Pré-definidos) -->
+        <div class="modal-bg" id="modal-produto-bg">
+            <div class="modal" style="max-width:460px">
+                <h3 id="modal-produto-titulo">📦 Novo Produto</h3>
+                <div class="fgrid" style="margin-top:14px">
+                    <div class="fg" style="grid-column:1/-1">
+                        <label>Nome do Produto</label>
+                        <input type="text" id="prod-nome" placeholder="Ex: 1kg Turbinado Direto">
+                    </div>
+                    <div class="fg">
+                        <label>Ícone (emoji)</label>
+                        <input type="text" id="prod-icon" placeholder="🌱" maxlength="4" style="font-size:22px;text-align:center">
+                    </div>
+                    <div class="fg">
+                        <label>Preço de Venda (R$)</label>
+                        <input type="number" id="prod-preco" step="0.01" min="0" placeholder="0,00">
+                    </div>
+                    <div class="fg">
+                        <label>Custo do Produto (R$)</label>
+                        <input type="number" id="prod-custo" step="0.01" min="0" placeholder="0,00">
+                    </div>
+                </div>
+                <input type="hidden" id="prod-edit-id">
+                <div class="btn-row" style="margin-top:18px">
+                    <button class="btn btn-primary" onclick="salvarProduto()">💾 Salvar</button>
+                    <button class="btn btn-ghost" onclick="fecharFormProduto()">Cancelar</button>
+                </div>
+            </div>
+        </div>
 
         <!-- MODAL CONFIRMAÇÃO -->
         <div class="modal-bg" id="modal-bg">
@@ -461,6 +603,25 @@
                 <div class="btn-row">
                     <button class="btn btn-primary" onclick="confirmarVenda()">✅ Confirmar</button>
                     <button class="btn btn-danger" onclick="fecharModal()">❌ Cancelar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL NOTA FISCAL -->
+        <div class="modal-bg" id="modal-nf-bg">
+            <div class="modal" style="max-width:580px;padding:0;overflow:hidden">
+                <!-- Cabeçalho do modal -->
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--borda)">
+                    <h3 style="margin:0">🧾 Nota Fiscal</h3>
+                    <div class="btn-row" style="margin:0;gap:8px">
+                        <button class="btn btn-info btn-sm" onclick="imprimirNF()">🖨️ Imprimir</button>
+                        <button class="btn btn-primary btn-sm" onclick="gerarPDFNF()">📄 PDF</button>
+                        <button class="btn btn-ghost btn-sm" onclick="fecharNF()">✕</button>
+                    </div>
+                </div>
+                <!-- Corpo da nota (área imprimível) -->
+                <div id="nf-corpo" style="padding:24px;overflow-y:auto;max-height:75vh">
+                    <!-- preenchido por renderNF() -->
                 </div>
             </div>
         </div>
