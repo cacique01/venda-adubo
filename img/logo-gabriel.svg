@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Logo Gabriel Gatti">
+  <filter id="remove-white" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 -1 -1 -1 0 2.92" />
+  </filter>
+  <image filter="url(#remove-white)" href="data:image/jpeg;base64,
+    /9j/4AAQSkZJRgABAQEAYABgAAD/2wBDABgQEhUSDxgVExUaGRgcIzsmIyAg
+    I0gzNis7VUtaWFRLUlFeaodzXmSAZVFSdqB3gIyQl5mXW3GmsqWTsIeUl5L/
+    2wBDARkaGiMfI0UmJkWSYVJhkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKS
+    kpKSkpKSkpKSkpKSkpKSkpKSkpKSkpL/wAARCAAwADADASIAAhEBAxEB/8QA
+    HwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUF
+    BAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkK
+    FhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1
+    dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXG
+    x8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEB
+    AQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAEC
+    AxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRom
+    JygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOE
+    hYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU
+    1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDqqjmnit03
+    zSKi+pNPJCgknAHJNYl2FvJC8hJB4UDsKznNQA1hcxuqtGwcN3U5qXdziufZ
+    Yrfa6yPGegKf/W/rUDa1LFKFDsy5wS/PHrWcarbKtfZG8l6u9w42gS+Wnfd0
+    z+tWq5aLUIPMIaQhlkJSXGV5Oc4rpbdg0CMH8wFQd3rWsZNtpiaaKmqXMkfk
+    21vgTXDbQSMhR3NUpGt0kcC5eVETaybizu5IAPPA/CrupWzNLBdxSIj25J/e
+    fdIPXPpWfPE/2yU3IZ7iZ0MAhIB+Udec4Az1NEiWBl+eFLeN1c3JRwZM79q8
+    jPpzUUItZ2UxacHPliVt0h+UbsH68DNWILa1DTeeHi8p9oZZmKksOQOOvrUh
+    uLaGdBaQh45YiZGHTYgxgZNSkgTaKpNvOkO61M0rqZAC2CqlsKBgf/qq/o4D
+    PcSg4VnKRJngIvHA+tVdPSJ2swIVikdGZlBbmPt3+nWtHTIoVhMkKFA7NwWz
+    jk9PaqW4K7J7uIz2ssQ6upA+tZKyBNWaa48xEktwkbqpO09x9c5rbqpd2ckm
+    XtZ2gkJycfdb6im11HvoZFuZZlina5wollC+axLDjAIHcjmiO3jEYBuHKiHy
+    GKIFGM56k/nTJbe9jnJu0BjCnBUYU+gOOg70qW1xdMD8zjtsGAPoTgD8M1k3
+    LoNxsWIPIjk88XUjNFEEK7RyAeAMdOccd61bGJobONH+/jLfU8n+dV7LThDt
+    aXaSpyqL0B9Se596v1pFPqLZWP/Z
+  " width="1024" height="1024" preserveAspectRatio="xMidYMid meet" />
+</svg>

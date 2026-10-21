@@ -4,18 +4,48 @@ let metas  = JSON.parse(localStorage.getItem('gg_metas')  || '{"valor":0,"unidad
 
 // Produtos dinâmicos (substitui o antigo objeto 'precos' hardcoded)
 const PRODUTOS_PADRAO = [
-    { id: 'dT1',  icon: '🌱', nome: '1kg Turbinado Direto',    preco: 9,   custo: 3  },
-    { id: 'dT4',  icon: '🌿', nome: '4kg Turbinado Direto',    preco: 25,  custo: 7  },
-    { id: 'cT1',  icon: '🌱', nome: '1kg Turbinado Consignado',preco: 12,  custo: 3  },
-    { id: 'cT4',  icon: '🌿', nome: '4kg Turbinado Consignado',preco: 20,  custo: 7  },
-    { id: 'dF1',  icon: '🍊', nome: '1kg Frutífero Direto',    preco: 12,  custo: 4  },
-    { id: 'dF4',  icon: '🌳', nome: '4kg Frutífero Direto',    preco: 7,   custo: 8  },
-    { id: 'cF1',  icon: '🍊', nome: '1kg Frutífero Consignado',preco: 35,  custo: 4  },
-    { id: 'cF4',  icon: '🌳', nome: '4kg Frutífero Consignado',preco: 20,  custo: 8  },
-    { id: 'p50',  icon: '📦', nome: '50kg Granel',             preco: 270, custo: 88 },
-    { id: 'p100', icon: '🏭', nome: '100kg Granel',            preco: 400, custo: 175},
+    { id: 'dT1',  icon: 'sprout', nome: '1kg Turbinado Direto',    preco: 9,   custo: 3  },
+    { id: 'dT4',  icon: 'leaf', nome: '4kg Turbinado Direto',    preco: 25,  custo: 7  },
+    { id: 'cT1',  icon: 'sprout', nome: '1kg Turbinado Consignado',preco: 12,  custo: 3  },
+    { id: 'cT4',  icon: 'leaf', nome: '4kg Turbinado Consignado',preco: 20,  custo: 7  },
+    { id: 'dF1',  icon: 'citrus', nome: '1kg Frutífero Direto',    preco: 12,  custo: 4  },
+    { id: 'dF4',  icon: 'tree-pine', nome: '4kg Frutífero Direto',    preco: 7,   custo: 8  },
+    { id: 'cF1',  icon: 'citrus', nome: '1kg Frutífero Consignado',preco: 35,  custo: 4  },
+    { id: 'cF4',  icon: 'tree-pine', nome: '4kg Frutífero Consignado',preco: 20,  custo: 8  },
+    { id: 'p50',  icon: 'package', nome: '50kg Granel',             preco: 270, custo: 88 },
+    { id: 'p100', icon: 'factory', nome: '100kg Granel',            preco: 400, custo: 175},
 ];
+const ICONES_LEGADOS = {
+    '\u{1F331}': 'sprout', '\u{1F33F}': 'leaf', '\u{1F34A}': 'citrus',
+    '\u{1F333}': 'tree-pine', '\u{1F4E6}': 'package', '\u{1F3ED}': 'factory'
+};
+const ICONES_VALIDOS = new Set([
+    'sprout', 'leaf', 'citrus', 'tree-pine', 'package', 'factory', 'wallet', 'user-round',
+    'credit-card', 'calendar-days', 'badge-dollar-sign', 'clipboard-list', 'circle-check',
+    'receipt-text', 'pencil', 'circle-x', 'trash-2', 'save', 'file-text', 'file-spreadsheet', 'minus', 'plus'
+]);
+function normalizarIcone(icon) {
+    const nome = ICONES_LEGADOS[icon] || icon;
+    return ICONES_VALIDOS.has(nome) ? nome : 'package';
+}
+function iconeMarkup(icon, classe = 'ui-icon') {
+    return `<i class="${classe}" data-lucide="${normalizarIcone(icon)}" aria-hidden="true"></i>`;
+}
+function renderizarIcones(root = document) {
+    if (window.lucide) window.lucide.createIcons({ root });
+}
+
+const observadorIcones = new MutationObserver(registros => {
+    const novosIcones = registros.some(registro => [...registro.addedNodes].some(node =>
+        node.nodeType === 1 && (node.matches('i[data-lucide]') || node.querySelector('i[data-lucide]'))
+    ));
+    if (novosIcones) renderizarIcones();
+});
+observadorIcones.observe(document.body, { childList: true, subtree: true });
+renderizarIcones();
+
 let produtos = JSON.parse(localStorage.getItem('gg_produtos') || 'null') || PRODUTOS_PADRAO;
+produtos = produtos.map(p => ({ ...p, icon: normalizarIcone(p.icon) }));
 function salvarProdutosLS() { localStorage.setItem('gg_produtos', JSON.stringify(produtos)); }
 
 // Compat: objeto precos legado para não quebrar cálculos antigos
@@ -52,11 +82,11 @@ window.renderGastos = function () {
     lista.innerHTML = gMes.map(g => `
         <div class="gasto-item">
             <div class="gasto-info">
-                <div class="gasto-nome">💸 ${g.nome}</div>
+                <div class="gasto-nome">${iconeMarkup('wallet')} ${g.nome}</div>
                 <div class="gasto-sub">${g.qtd || 1} × R$ ${parseFloat(g.valor || 0).toFixed(2)} · ${formatarData(g.data)}</div>
             </div>
             <div class="gasto-valor">R$ ${(parseFloat(g.valor || 0) * (g.qtd || 1)).toFixed(2)}</div>
-            <button class="cart-rem" onclick="excluirGasto('${g._id}')" title="Remover">✕</button>
+            <button class="cart-rem" onclick="excluirGasto('${g._id}')" title="Remover">${iconeMarkup('circle-x')}</button>
         </div>
     `).join('');
     const total = gMes.reduce((s, g) => s + parseFloat(g.valor || 0) * (g.qtd || 1), 0);
@@ -78,9 +108,9 @@ async function lancarGasto() {
         el('gasto-nome').value = '';
         el('gasto-qtd').value = '1';
         el('gasto-valor').value = '';
-        toast('✅ Gasto registrado!');
+        toast('Gasto registrado.');
     } catch (e) {
-        toast('❌ Erro: ' + e.message, 'err');
+        toast('Erro: ' + e.message, 'err');
     }
 }
 
@@ -160,7 +190,7 @@ function adicionarAoCarrinho(id) {
         carrinho.push({ prodId: id, nome: p.nome, icon: p.icon, qtd: 1, unit: p.preco, custo: p.custo });
     }
     renderCarrinho();
-    toast(`✅ ${p.icon} ${p.nome} adicionado!`);
+    toast(`${p.nome} adicionado.`);
 }
 
 function alterarQtdCarrinho(id, delta) {
@@ -199,7 +229,7 @@ function renderCarrinho() {
     const total = carrinho.reduce((s, i) => s + i.qtd * i.unit, 0);
     lista.innerHTML = carrinho.map(item => `
         <div class="cart-item">
-            <span class="cart-icon">${item.icon}</span>
+            ${iconeMarkup(item.icon, 'cart-icon ui-icon')}
             <div class="cart-info">
                 <div class="cart-nome">${item.nome}</div>
                 <div class="cart-preco">R$ ${item.unit.toFixed(2)} cada ·
@@ -210,12 +240,12 @@ function renderCarrinho() {
                 </div>
             </div>
             <div class="cart-qty">
-                <button class="qty-btn" onclick="alterarQtdCarrinho('${item.prodId}', -1)">−</button>
+                <button class="qty-btn" onclick="alterarQtdCarrinho('${item.prodId}', -1)" title="Diminuir">${iconeMarkup('minus')}</button>
                 <span>${item.qtd}</span>
-                <button class="qty-btn" onclick="alterarQtdCarrinho('${item.prodId}', 1)">+</button>
+                <button class="qty-btn" onclick="alterarQtdCarrinho('${item.prodId}', 1)" title="Aumentar">${iconeMarkup('plus')}</button>
             </div>
             <div class="cart-sub">R$ ${(item.qtd * item.unit).toFixed(2)}</div>
-            <button class="cart-rem" onclick="removerDoCarrinho('${item.prodId}')" title="Remover">✕</button>
+            <button class="cart-rem" onclick="removerDoCarrinho('${item.prodId}')" title="Remover">${iconeMarkup('circle-x')}</button>
         </div>
     `).join('');
     if (totalEl) {
@@ -234,7 +264,7 @@ function renderGradeProdutos() {
     }
     grade.innerHTML = produtos.map(p => `
         <div class="prod-card" data-id="${p.id}" onclick="adicionarAoCarrinho('${p.id}')">
-            <span class="pc-icon">${p.icon}</span>
+            ${iconeMarkup(p.icon, 'pc-icon ui-icon')}
             <span class="pc-nome">${p.nome}</span>
             <span class="pc-preco">R$ ${parseFloat(p.preco).toFixed(2)}</span>
         </div>
@@ -264,17 +294,17 @@ function lancarVenda() {
     vendaPendente = { data, itens, total, cliente: cli, pagamento: pgto, obs, status: 'Confirmada' };
 
     el('modal-detail').innerHTML = `
-        <p>👤 Cliente: <span>${cli}</span></p>
-        <p>💳 Pagamento: <span>${pgto}</span></p>
-        <p>📅 Data: <span>${formatarData(data)}</span></p>
+        <p>${iconeMarkup('user-round')} Cliente: <span>${cli}</span></p>
+        <p>${iconeMarkup('credit-card')} Pagamento: <span>${pgto}</span></p>
+        <p>${iconeMarkup('calendar-days')} Data: <span>${formatarData(data)}</span></p>
         <div style="margin:10px 0;padding:10px;background:rgba(255,255,255,.05);border-radius:8px;font-size:13px">
             ${itens.map(i => `<div style="display:flex;justify-content:space-between;padding:3px 0">
-                <span>${i.icon} ${i.nome} × ${i.qtd}</span>
+                <span>${iconeMarkup(i.icon)} ${i.nome} × ${i.qtd}</span>
                 <strong>R$ ${i.subtotal.toFixed(2)}</strong>
             </div>`).join('')}
         </div>
-        <p>💵 Total: <span style="color:var(--neon);font-weight:800;font-size:17px">R$ ${total.toFixed(2)}</span></p>
-        ${obs ? `<p>📝 Obs: <span>${obs}</span></p>` : ''}
+        <p>${iconeMarkup('badge-dollar-sign')} Total: <span style="color:var(--neon);font-weight:800;font-size:17px">R$ ${total.toFixed(2)}</span></p>
+        ${obs ? `<p>${iconeMarkup('clipboard-list')} Obs: <span>${obs}</span></p>` : ''}
     `;
     el('modal-bg').classList.add('open');
 }
@@ -287,9 +317,9 @@ async function confirmarVenda() {
         await window._addDoc(window._col, { ...vendaPendente, criadoEm: window._serverTimestamp() });
         fecharModal();
         limparForm();
-        toast('✅ Venda lançada e sincronizada!');
+        toast('Venda lançada e sincronizada.');
     } catch (e) {
-        toast('❌ Erro ao salvar: ' + e.message, 'err');
+        toast('Erro ao salvar: ' + e.message, 'err');
     }
 }
 
@@ -327,7 +357,7 @@ async function salvarEdicao() {
             pagamento: el('edit-pgto').value,
             obs: el('edit-obs').value
         });
-        fecharEdit(); toast('✅ Venda editada!');
+        fecharEdit(); toast('Venda editada.');
     } catch (e) { toast('Erro: ' + e.message, 'err'); }
 }
 
@@ -335,7 +365,7 @@ async function salvarEdicao() {
 function vendaItens(v) {
     if (v.itens && v.itens.length > 0) return v.itens;
     // venda legada (campo único)
-    return [{ nome: produtoLabel(v), icon: '📦', qtd: v.qtd || 1, unit: v.unit || 0, custo: custoLegado(v), subtotal: v.total || 0 }];
+    return [{ nome: produtoLabel(v), icon: 'package', qtd: v.qtd || 1, unit: v.unit || 0, custo: custoLegado(v), subtotal: v.total || 0 }];
 }
 
 function custoLegado(v) {
@@ -378,7 +408,7 @@ window.renderPainel = function () {
     el('meta-painel').innerHTML = metas.valor > 0
         ? `<p style="font-size:13px;color:var(--cinza);margin-bottom:6px">Meta: <strong style="color:#fff">R$ ${metas.valor.toFixed(2)}</strong> — Atingido: <strong style="color:var(--neon)">R$ ${fat.toFixed(2)}</strong> (${pct.toFixed(1)}%)</p>
        <div class="prog-bar"><div class="prog-fill" style="width:${pct}%"></div></div>
-       <p style="font-size:12px;color:var(--cinza);margin-top:6px">${pct >= 100 ? '🎉 Meta atingida!' : `Faltam R$ ${(metas.valor - fat).toFixed(2)}`}</p>`
+    <p style="font-size:12px;color:var(--cinza);margin-top:6px">${pct >= 100 ? `${iconeMarkup('circle-check')} Meta atingida!` : `Faltam R$ ${(metas.valor - fat).toFixed(2)}`}</p>`
         : `<p style="color:var(--cinza);font-size:13px">Nenhuma meta definida. Acesse <strong>Metas</strong> para configurar.</p>`;
 
     el('tbl-recentes').innerHTML = vendas().slice(0, 8).map(v => {
@@ -401,7 +431,7 @@ window.renderHistorico = function () {
         ? lista.map((v, i) => {
             const itens = vendaItens(v);
             const label = itens.length > 1
-                ? itens.map(it => `${it.icon} ${it.nome} ×${it.qtd}`).join(', ')
+                ? itens.map(it => `${it.nome} ×${it.qtd}`).join(', ')
                 : (itens[0]?.nome || produtoLabel(v));
             return `<tr>
             <td>${i + 1}</td><td>${formatarData(v.data)}</td><td>${v.cliente || '–'}</td>
@@ -412,10 +442,10 @@ window.renderHistorico = function () {
             <td>${v.pagamento || '–'}</td>
             <td><span class="badge ${(v.status || 'Confirmada') === 'Confirmada' ? 'badge-ok' : 'badge-cancel'}">${v.status || 'Confirmada'}</span></td>
             <td><div class="btn-row">
-                <button class="btn btn-info btn-sm" onclick="abrirNF('${v._id}')" title="Nota Fiscal">🧾</button>
+                <button class="btn btn-info btn-sm" onclick="abrirNF('${v._id}')" title="Nota Fiscal">${iconeMarkup('receipt-text')}</button>
                 ${(v.status || 'Confirmada') !== 'Cancelada'
-                    ? `<button class="btn btn-warn btn-sm" onclick="abrirEdit('${v._id}')">✏️</button>
-                <button class="btn btn-danger btn-sm" onclick="cancelarVenda('${v._id}')">❌</button>`
+                    ? `<button class="btn btn-warn btn-sm" onclick="abrirEdit('${v._id}')" title="Editar">${iconeMarkup('pencil')}</button>
+                <button class="btn btn-danger btn-sm" onclick="cancelarVenda('${v._id}')" title="Cancelar">${iconeMarkup('circle-x')}</button>`
                     : ''}
             </div></td>
         </tr>`;
@@ -472,7 +502,7 @@ window.renderSemana = function () {
         el('previsao-meta').innerHTML = `
       <p style="font-size:14px;color:var(--cinza)">Média diária: <strong style="color:#fff">R$ ${med.toFixed(2)}/dia</strong></p>
       <p style="font-size:14px;color:var(--cinza);margin-top:8px">Projeção fim da semana: <strong style="color:var(--neon)">R$ ${proj.toFixed(2)}</strong></p>
-      ${falta > 0 ? `<p style="font-size:14px;color:var(--cinza);margin-top:8px">Faltam <strong style="color:var(--amarelo)">R$ ${falta.toFixed(2)}</strong> para bater a meta mensal.</p>` : '<p style="color:var(--neon);margin-top:8px">🎉 Meta mensal atingida!</p>'}
+    ${falta > 0 ? `<p style="font-size:14px;color:var(--cinza);margin-top:8px">Faltam <strong style="color:var(--amarelo)">R$ ${falta.toFixed(2)}</strong> para bater a meta mensal.</p>` : `<p style="color:var(--neon);margin-top:8px">${iconeMarkup('circle-check')} Meta mensal atingida!</p>`}
     `;
     } else {
         el('previsao-meta').innerHTML = `<p style="color:var(--cinza);font-size:13px">Defina uma meta mensal para ver a previsão.</p>`;
@@ -509,11 +539,11 @@ window.renderMeta = function () {
     const medP = produtos.length > 0 ? produtos.reduce((s, p) => s + p.preco, 0) / produtos.length : 15;
     el('previsao-geral').innerHTML = metas.valor > 0
         ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-        <div class="meta-box"><strong>💰 Para bater a meta de faturamento</strong>
+        <div class="meta-box"><strong>${iconeMarkup('badge-dollar-sign')} Para bater a meta de faturamento</strong>
           <p>Faltam <strong style="color:var(--neon)">R$ ${faltaVal.toFixed(2)}</strong></p>
           <p>≈ <strong style="color:var(--neon)">${Math.ceil(faltaVal / medP)} unidade(s)</strong> ao preço médio</p>
         </div>
-        <div class="meta-box"><strong>📦 Para bater a meta de unidades</strong>
+        <div class="meta-box"><strong>${iconeMarkup('package')} Para bater a meta de unidades</strong>
           <p>Faltam <strong style="color:var(--neon)">${faltaUni} unidade(s)</strong></p>
         </div>
       </div>`
@@ -534,14 +564,14 @@ function renderPredefinidos() {
     }
     lista.innerHTML = produtos.map(p => `
         <div class="predef-item">
-            <span class="predef-icon">${p.icon}</span>
+            ${iconeMarkup(p.icon, 'predef-icon ui-icon')}
             <div class="predef-info">
                 <div class="predef-nome">${p.nome}</div>
                 <div class="predef-sub">Preço: <strong>R$ ${parseFloat(p.preco).toFixed(2)}</strong> · Custo: R$ ${parseFloat(p.custo).toFixed(2)}</div>
             </div>
             <div class="predef-acoes">
-                <button class="btn btn-warn btn-sm" onclick="abrirFormProduto('${p.id}')">✏️</button>
-                <button class="btn btn-danger btn-sm" onclick="excluirProduto('${p.id}')">🗑️</button>
+                <button class="btn btn-warn btn-sm" onclick="abrirFormProduto('${p.id}')" title="Editar">${iconeMarkup('pencil')}</button>
+                <button class="btn btn-danger btn-sm" onclick="excluirProduto('${p.id}')" title="Excluir">${iconeMarkup('trash-2')}</button>
             </div>
         </div>
     `).join('');
@@ -549,18 +579,20 @@ function renderPredefinidos() {
 
 function abrirFormProduto(id) {
     const isEdicao = !!id;
-    el('modal-produto-titulo').textContent = isEdicao ? '✏️ Editar Produto' : '📦 Novo Produto';
+    el('modal-produto-titulo').innerHTML = isEdicao
+        ? `${iconeMarkup('pencil')} Editar Produto`
+        : `${iconeMarkup('package')} Novo Produto`;
     el('prod-edit-id').value = id || '';
     if (isEdicao) {
         const p = produtos.find(x => x.id === id);
         if (!p) return;
         el('prod-nome').value = p.nome;
-        el('prod-icon').value = p.icon;
+        el('prod-icon').value = normalizarIcone(p.icon);
         el('prod-preco').value = p.preco;
         el('prod-custo').value = p.custo;
     } else {
         el('prod-nome').value = '';
-        el('prod-icon').value = '📦';
+        el('prod-icon').value = 'package';
         el('prod-preco').value = '';
         el('prod-custo').value = '';
     }
@@ -573,7 +605,7 @@ function fecharFormProduto() {
 
 function salvarProduto() {
     const nome = el('prod-nome').value.trim();
-    const icon = el('prod-icon').value.trim() || '📦';
+    const icon = normalizarIcone(el('prod-icon').value);
     const preco = parseFloat(el('prod-preco').value) || 0;
     const custo = parseFloat(el('prod-custo').value) || 0;
     if (!nome) return toast('Informe o nome do produto.', 'err');
@@ -591,7 +623,7 @@ function salvarProduto() {
     fecharFormProduto();
     renderPredefinidos();
     renderGradeProdutos(); // atualiza aba Venda
-    toast('✅ Produto salvo!');
+    toast('Produto salvo.');
 }
 
 function excluirProduto(id) {
@@ -642,7 +674,7 @@ function exportarPDF() {
         y += 7;
     });
     doc.save(`Relatorio_GabrielGatti_${mes || 'completo'}.pdf`);
-    toast('📄 PDF gerado!');
+    toast('PDF gerado.');
 }
 
 function exportarCSV() {
@@ -659,7 +691,7 @@ function exportarCSV() {
     a.href = URL.createObjectURL(blob);
     a.download = `Vendas_GabrielGatti_${mes || 'completo'}.csv`;
     a.click();
-    toast('📊 CSV exportado!');
+    toast('CSV exportado.');
 }
 
 // ── nota fiscal ───────────────────────────────────────────────────
@@ -689,7 +721,7 @@ function renderNF(v) {
         <!-- Topo da nota -->
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap">
             <div>
-                <div style="font-size:20px;font-weight:900;color:#1a6b3c;letter-spacing:-0.5px">🌿 Esterco Turbinado</div>
+                <div style="font-size:20px;font-weight:900;color:#1a6b3c;letter-spacing:-0.5px">Esterco Turbinado</div>
                 <div style="font-size:11px;color:#555;margin-top:3px">Gabriel V. Gatti</div>
                 <div style="font-size:11px;color:#555">CNPJ: 66.116.356/0001-01</div>
             </div>
@@ -726,7 +758,7 @@ function renderNF(v) {
             <tbody>
                 ${itens.map(it => `<tr>
                     <td style="padding:10px 10px;border-bottom:1px solid #e5e7eb">
-                        <div style="font-weight:600;color:#111">${it.icon || '📦'} ${it.nome}</div>
+                        <div style="font-weight:600;color:#111">${it.nome}</div>
                     </td>
                     <td style="padding:10px;text-align:center;border-bottom:1px solid #e5e7eb">${it.qtd}</td>
                     <td style="padding:10px;text-align:right;border-bottom:1px solid #e5e7eb">R$ ${parseFloat(it.unit).toFixed(2)}</td>
@@ -897,7 +929,7 @@ function gerarPDFNF() {
     doc.text('Documento gerado pelo Sistema Primário 3.0 · Esterco Turbinado Gabriel Gatti', 105, 285, { align: 'center' });
 
     doc.save(`NotaFiscal_${nfNum}_${v.cliente || 'cliente'}.pdf`);
-    toast('📄 PDF da nota gerado!');
+    toast('PDF da nota gerado.');
 }
 
 // ── init ──────────────────────────────────────────────────────────

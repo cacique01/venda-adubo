@@ -8,6 +8,7 @@
 
     <link rel="icon" href="img/icon.jpeg">
     <link href="css/style.css" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap"
         rel="stylesheet">
@@ -90,8 +91,9 @@
                 }
 
                 if (badge) {
-                    const icon = window._usuarioAdmin ? '👑' : '👤';
-                    badge.textContent = user ? icon + ' ' + window._usuarioNome : '🔧 Modo Manutenção';
+                    badge.innerHTML = user
+                        ? `<i class="ui-icon" data-lucide="${window._usuarioAdmin ? 'crown' : 'user-round'}" aria-hidden="true"></i> ${window._usuarioNome}`
+                        : '<i class="ui-icon" data-lucide="wrench" aria-hidden="true"></i> Modo Manutenção';
                 }
 
                 // Timeout de segurança: se o Firestore não responder em 6s, esconde o loading mesmo assim
@@ -175,7 +177,7 @@
                 erro.classList.add('show');
             } finally {
                 btn.disabled = false;
-                btn.textContent = '🔑 Entrar';
+                btn.innerHTML = '<i class="ui-icon" data-lucide="log-in" aria-hidden="true"></i> Entrar';
             }
         };
 
@@ -201,7 +203,7 @@
 
             try {
                 await sendPasswordResetEmail(auth, email);
-                sucesso.textContent = '✅ E-mail de redefinição enviado para ' + email + '. Verifique a caixa de entrada.';
+                sucesso.textContent = 'E-mail de redefinição enviado para ' + email + '. Verifique a caixa de entrada.';
                 sucesso.classList.add('show');
             } catch (e) {
                 let msg = 'Não foi possível enviar o e-mail.';
@@ -220,13 +222,13 @@
     <div id="login-screen">
         <div class="login-box">
             <div class="login-logo">
-                <div class="login-logo-icon">🌱</div>
+                <div class="login-logo-icon"><i class="ui-icon" data-lucide="sprout" aria-hidden="true"></i></div>
                 <div>
                     <h1>Gabriel Gatti</h1>
                     <p>Sistema de Vendas</p>
                 </div>
             </div>
-            <p class="login-title">🔐 Acesso restrito — faça login para continuar</p>
+            <p class="login-title"><i class="ui-icon" data-lucide="lock-keyhole" aria-hidden="true"></i> Acesso restrito — faça login para continuar</p>
 
             <div class="login-field">
                 <label>E-mail</label>
@@ -237,14 +239,14 @@
                 <input type="password" id="login-senha" placeholder="••••••••" onkeydown="loginKeydown(event)">
             </div>
 
-            <button class="login-btn" id="login-btn" onclick="fazerLogin()">🔑 Entrar</button>
+            <button class="login-btn" id="login-btn" onclick="fazerLogin()"><i class="ui-icon" data-lucide="log-in" aria-hidden="true"></i> Entrar</button>
 
             <div class="login-error" id="login-erro"></div>
             <div class="login-success" id="login-sucesso"></div>
 
             <button class="btn-esqueci" onclick="esqueciSenha()">Esqueci minha senha</button>
 
-            <p class="login-security">🛡️ Acesso protegido por Firebase Authentication</p>
+            <p class="login-security"><i class="ui-icon" data-lucide="shield-check" aria-hidden="true"></i> Acesso protegido por Firebase Authentication</p>
         </div>
     </div>
 
@@ -259,22 +261,22 @@
         <header>
             <div class="logo">
                 <div class="logo-menu-wrap">
-                    <button class="logo-icon logo-menu-trigger" type="button" aria-label="Abrir menu extra" aria-expanded="false" onclick="toggleLogoMenu()">🌱</button>
+                    <button class="logo-icon logo-menu-trigger" type="button" aria-label="Abrir menu extra" aria-expanded="false" onclick="toggleLogoMenu()"><img src="img/logo-gabriel.svg" alt=""></button>
                     <div class="logo-menu" id="logo-menu">
-                        <button class="tab" data-icon="📋" onclick="toggleLogoMenu(); mudarTab('historico',this)">
-                            <span class="tab-text">📋 Histórico</span>
+                        <button class="tab" onclick="toggleLogoMenu(); mudarTab('historico',this)">
+                            <span class="tab-text"><i class="ui-icon" data-lucide="clipboard-list" aria-hidden="true"></i> Histórico</span>
                             <span class="tab-label">Histórico</span>
                         </button>
-                        <button class="tab" data-icon="📅" onclick="toggleLogoMenu(); mudarTab('semana',this)">
-                            <span class="tab-text">📅 Semanal</span>
+                        <button class="tab" onclick="toggleLogoMenu(); mudarTab('semana',this)">
+                            <span class="tab-text"><i class="ui-icon" data-lucide="calendar-days" aria-hidden="true"></i> Semanal</span>
                             <span class="tab-label">Semanal</span>
                         </button>
-                        <button class="tab" data-icon="🎯" onclick="toggleLogoMenu(); mudarTab('meta',this)">
-                            <span class="tab-text">🎯 Metas</span>
+                        <button class="tab" onclick="toggleLogoMenu(); mudarTab('meta',this)">
+                            <span class="tab-text"><i class="ui-icon" data-lucide="target" aria-hidden="true"></i> Metas</span>
                             <span class="tab-label">Metas</span>
                         </button>
-                        <button class="tab" data-icon="⚙️" onclick="toggleLogoMenu(); mudarTab('config',this)">
-                            <span class="tab-text">⚙️ Pré-definidos</span>
+                        <button class="tab" onclick="toggleLogoMenu(); mudarTab('config',this)">
+                            <span class="tab-text"><i class="ui-icon" data-lucide="settings" aria-hidden="true"></i> Pré-definidos</span>
                             <span class="tab-label">Pré-def.</span>
                         </button>
                     </div>
@@ -288,37 +290,44 @@
                 <strong><span class="sync-dot"></span><span id="relogio"></span></strong>
                 CNPJ: 66.116.356/0001-01
                 <span class="user-badge" id="user-badge"></span>
-                <button class="btn-logout" onclick="window._signOut()">🚪 Sair</button>
+                <button class="btn-logout" onclick="window._signOut()"><i class="ui-icon" data-lucide="log-out" aria-hidden="true"></i> Sair</button>
             </div>
         </header>
 
         <nav>
-            <button class="tab mobile-fixed active" data-icon="📊" onclick="mudarTab('painel',this)">
-                <span class="tab-text">📊 Painel</span>
+            <button class="tab mobile-fixed active" onclick="mudarTab('painel',this)">
+                <span class="tab-text"><i class="ui-icon" data-lucide="layout-dashboard" aria-hidden="true"></i> Painel</span>
+                <i class="tab-icon ui-icon" data-lucide="layout-dashboard" aria-hidden="true"></i>
                 <span class="tab-label">Painel</span>
             </button>
-            <button class="tab mobile-fixed" data-icon="💰" onclick="mudarTab('nova',this)">
-                <span class="tab-text">💰 Venda</span>
+            <button class="tab mobile-fixed" onclick="mudarTab('nova',this)">
+                <span class="tab-text"><i class="ui-icon" data-lucide="badge-dollar-sign" aria-hidden="true"></i> Venda</span>
+                <i class="tab-icon ui-icon" data-lucide="badge-dollar-sign" aria-hidden="true"></i>
                 <span class="tab-label">Venda</span>
             </button>
-            <button class="tab" data-icon="📋" onclick="mudarTab('historico',this)">
-                <span class="tab-text">📋 Histórico</span>
+            <button class="tab" onclick="mudarTab('historico',this)">
+                <span class="tab-text"><i class="ui-icon" data-lucide="clipboard-list" aria-hidden="true"></i> Histórico</span>
+                <i class="tab-icon ui-icon" data-lucide="clipboard-list" aria-hidden="true"></i>
                 <span class="tab-label">Histórico</span>
             </button>
-            <button class="tab" data-icon="📅" onclick="mudarTab('semana',this)">
-                <span class="tab-text">📅 Semanal</span>
+            <button class="tab" onclick="mudarTab('semana',this)">
+                <span class="tab-text"><i class="ui-icon" data-lucide="calendar-days" aria-hidden="true"></i> Semanal</span>
+                <i class="tab-icon ui-icon" data-lucide="calendar-days" aria-hidden="true"></i>
                 <span class="tab-label">Semanal</span>
             </button>
-            <button class="tab" data-icon="🎯" onclick="mudarTab('meta',this)">
-                <span class="tab-text">🎯 Metas</span>
+            <button class="tab" onclick="mudarTab('meta',this)">
+                <span class="tab-text"><i class="ui-icon" data-lucide="target" aria-hidden="true"></i> Metas</span>
+                <i class="tab-icon ui-icon" data-lucide="target" aria-hidden="true"></i>
                 <span class="tab-label">Metas</span>
             </button>
-            <button class="tab mobile-fixed" data-icon="💸" onclick="mudarTab('gastos',this)">
-                <span class="tab-text">💸 Gastos</span>
+            <button class="tab mobile-fixed" onclick="mudarTab('gastos',this)">
+                <span class="tab-text"><i class="ui-icon" data-lucide="wallet" aria-hidden="true"></i> Gastos</span>
+                <i class="tab-icon ui-icon" data-lucide="wallet" aria-hidden="true"></i>
                 <span class="tab-label">Gastos</span>
             </button>
-            <button class="tab" data-icon="⚙️" onclick="mudarTab('config',this)">
-                <span class="tab-text">⚙️ Pré-definidos</span>
+            <button class="tab" onclick="mudarTab('config',this)">
+                <span class="tab-text"><i class="ui-icon" data-lucide="settings" aria-hidden="true"></i> Pré-definidos</span>
+                <i class="tab-icon ui-icon" data-lucide="settings" aria-hidden="true"></i>
                 <span class="tab-label">Pré-def.</span>
             </button>
         </nav>
@@ -330,11 +339,11 @@
                 <div class="sec-title">Painel <span>Geral</span></div>
                 <div class="cards" id="cards-painel"></div>
                 <div class="box">
-                    <h2>🎯 Meta Mensal</h2>
+                    <h2><i class="ui-icon" data-lucide="target" aria-hidden="true"></i> Meta Mensal</h2>
                     <div id="meta-painel"></div>
                 </div>
                 <div class="box">
-                    <h2>🕒 Últimas Vendas</h2>
+                    <h2><i class="ui-icon" data-lucide="clock-3" aria-hidden="true"></i> Últimas Vendas</h2>
                     <div class="tbl-wrap">
                         <table>
                             <thead>
@@ -356,13 +365,13 @@
 
             <!-- VENDA -->
             <div class="panel" id="tab-nova">
-                <div class="sec-title">💰 <span>Nova Venda</span></div>
+                <div class="sec-title"><i class="ui-icon" data-lucide="badge-dollar-sign" aria-hidden="true"></i> <span>Nova Venda</span></div>
 
                 <div class="venda-layout">
                     <!-- COLUNA ESQUERDA: Catálogo -->
                     <div class="venda-col-prod">
                         <div class="box">
-                            <h2>📦 Produtos</h2>
+                            <h2><i class="ui-icon" data-lucide="package" aria-hidden="true"></i> Produtos</h2>
                             <p style="color:var(--cinza);font-size:13px;margin-bottom:14px">Toque para adicionar ao carrinho.</p>
                             <div id="grade-produtos" class="grade-produtos"></div>
                         </div>
@@ -373,8 +382,8 @@
                         <!-- Carrinho -->
                         <div class="box" id="box-carrinho">
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                                <h2 style="margin:0">🛒 Carrinho</h2>
-                                <button class="btn btn-ghost btn-sm" onclick="limparCarrinho()">🗑️ Limpar</button>
+                                <h2 style="margin:0"><i class="ui-icon" data-lucide="shopping-cart" aria-hidden="true"></i> Carrinho</h2>
+                                <button class="btn btn-ghost btn-sm" onclick="limparCarrinho()"><i class="ui-icon" data-lucide="trash-2" aria-hidden="true"></i> Limpar</button>
                             </div>
                             <div id="lista-carrinho">
                                 <p style="color:var(--cinza);font-size:13px;text-align:center;padding:20px 0">Nenhum produto adicionado.</p>
@@ -384,7 +393,7 @@
 
                         <!-- Dados da Venda -->
                         <div class="box">
-                            <h2>📝 Dados da Venda</h2>
+                            <h2><i class="ui-icon" data-lucide="clipboard-list" aria-hidden="true"></i> Dados da Venda</h2>
                             <div class="fgrid">
                                 <div class="fg">
                                     <label>Cliente / Empresa</label>
@@ -409,8 +418,8 @@
                                 <textarea id="obs" placeholder="Observações opcionais..."></textarea>
                             </div>
                             <div class="btn-row">
-                                <button class="btn btn-primary" onclick="lancarVenda()">🚀 Lançar Venda</button>
-                                <button class="btn btn-ghost" onclick="limparForm()">🗑️ Limpar Tudo</button>
+                                <button class="btn btn-primary" onclick="lancarVenda()"><i class="ui-icon" data-lucide="circle-plus" aria-hidden="true"></i> Lançar Venda</button>
+                                <button class="btn btn-ghost" onclick="limparForm()"><i class="ui-icon" data-lucide="trash-2" aria-hidden="true"></i> Limpar Tudo</button>
                             </div>
                         </div>
                     </div>
@@ -419,11 +428,11 @@
 
             <!-- HISTÓRICO -->
             <div class="panel" id="tab-historico">
-                <div class="sec-title">📋 <span>Histórico de Vendas</span></div>
+                <div class="sec-title"><i class="ui-icon" data-lucide="clipboard-list" aria-hidden="true"></i> <span>Histórico de Vendas</span></div>
                 <div class="box" style="padding:16px 20px">
                     <div class="btn-row">
-                        <button class="btn btn-info btn-sm" onclick="exportarPDF()">📄 Exportar PDF</button>
-                        <button class="btn btn-ghost btn-sm" onclick="exportarCSV()">📊 Exportar CSV</button>
+                        <button class="btn btn-info btn-sm" onclick="exportarPDF()"><i class="ui-icon" data-lucide="file-text" aria-hidden="true"></i> Exportar PDF</button>
+                        <button class="btn btn-ghost btn-sm" onclick="exportarCSV()"><i class="ui-icon" data-lucide="file-spreadsheet" aria-hidden="true"></i> Exportar CSV</button>
                         <input type="month" id="filtro-mes" onchange="renderHistorico()"
                             style="background:rgba(255,255,255,.07);border:1px solid var(--borda);border-radius:8px;padding:7px 12px;color:var(--branco);font-family:'DM Sans',sans-serif;font-size:13px;outline:none">
                     </div>
@@ -454,14 +463,14 @@
 
             <!-- SEMANA -->
             <div class="panel" id="tab-semana">
-                <div class="sec-title">📅 Monitoramento <span>Semanal</span></div>
+                <div class="sec-title"><i class="ui-icon" data-lucide="calendar-days" aria-hidden="true"></i> Monitoramento <span>Semanal</span></div>
                 <div class="cards" id="cards-semana"></div>
                 <div class="box">
-                    <h2>📆 Vendas por Dia (Semana Atual)</h2>
+                    <h2><i class="ui-icon" data-lucide="calendar-range" aria-hidden="true"></i> Vendas por Dia (Semana Atual)</h2>
                     <div class="week-grid" id="week-grid"></div>
                 </div>
                 <div class="box">
-                    <h2>📋 Vendas desta Semana</h2>
+                    <h2><i class="ui-icon" data-lucide="clipboard-list" aria-hidden="true"></i> Vendas desta Semana</h2>
                     <div class="tbl-wrap">
                         <table>
                             <thead>
@@ -479,14 +488,14 @@
                     </div>
                 </div>
                 <div class="box">
-                    <h2>🔮 Previsão para Bater a Meta</h2>
+                    <h2><i class="ui-icon" data-lucide="chart-no-axes-column-increasing" aria-hidden="true"></i> Previsão para Bater a Meta</h2>
                     <div id="previsao-meta"></div>
                 </div>
             </div>
 
             <!-- METAS -->
             <div class="panel" id="tab-meta">
-                <div class="sec-title">🎯 <span>Metas</span></div>
+                <div class="sec-title"><i class="ui-icon" data-lucide="target" aria-hidden="true"></i> <span>Metas</span></div>
                 <div class="box">
                     <h2>Definir Meta Mensal</h2>
                     <div class="fgrid">
@@ -497,22 +506,22 @@
                     </div>
                 </div>
                 <div class="box">
-                    <h2>📈 Progresso do Mês</h2>
+                    <h2><i class="ui-icon" data-lucide="chart-no-axes-column-increasing" aria-hidden="true"></i> Progresso do Mês</h2>
                     <div id="progresso-mes"></div>
                 </div>
                 <div class="box">
-                    <h2>🔮 Quanto preciso vender para bater a meta?</h2>
+                    <h2><i class="ui-icon" data-lucide="chart-no-axes-column-increasing" aria-hidden="true"></i> Quanto preciso vender para bater a meta?</h2>
                     <div id="previsao-geral"></div>
                 </div>
             </div>
 
             <!-- GASTOS -->
             <div class="panel" id="tab-gastos">
-                <div class="sec-title">💸 <span>Gastos Variáveis</span></div>
+                <div class="sec-title"><i class="ui-icon" data-lucide="wallet" aria-hidden="true"></i> <span>Gastos Variáveis</span></div>
 
                 <!-- Formulário de novo gasto -->
                 <div class="box">
-                    <h2>➕ Registrar Gasto</h2>
+                    <h2><i class="ui-icon" data-lucide="circle-plus" aria-hidden="true"></i> Registrar Gasto</h2>
                     <p style="color:var(--cinza);font-size:13px;margin-bottom:16px">A data é registrada automaticamente no momento do lançamento.</p>
                     <div class="fgrid">
                         <div class="fg" style="grid-column:1/-1">
@@ -529,14 +538,14 @@
                         </div>
                     </div>
                     <div class="btn-row" style="margin-top:4px">
-                        <button class="btn btn-primary" onclick="lancarGasto()">💾 Registrar Gasto</button>
+                        <button class="btn btn-primary" onclick="lancarGasto()"><i class="ui-icon" data-lucide="save" aria-hidden="true"></i> Registrar Gasto</button>
                     </div>
                 </div>
 
                 <!-- Lista de gastos do mês -->
                 <div class="box">
                     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
-                        <h2 style="margin:0">📋 Gastos deste Mês</h2>
+                        <h2 style="margin:0"><i class="ui-icon" data-lucide="clipboard-list" aria-hidden="true"></i> Gastos deste Mês</h2>
                         <span id="gastos-total-mes" style="font-size:14px;font-weight:700;color:var(--vermelho)">Total do mês: R$ 0,00</span>
                     </div>
                     <div id="lista-gastos">
@@ -547,14 +556,14 @@
 
             <!-- PRÉ-DEFINIDOS -->
             <div class="panel" id="tab-config">
-                <div class="sec-title">⚙️ <span>Pré-definidos</span></div>
+                <div class="sec-title"><i class="ui-icon" data-lucide="settings" aria-hidden="true"></i> <span>Pré-definidos</span></div>
                 <div class="box">
                     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
                         <div>
-                            <h2 style="margin:0">📦 Produtos Cadastrados</h2>
+                            <h2 style="margin:0"><i class="ui-icon" data-lucide="package" aria-hidden="true"></i> Produtos Cadastrados</h2>
                             <p style="color:var(--cinza);font-size:13px;margin-top:4px">Gerencie os produtos disponíveis para venda.</p>
                         </div>
-                        <button class="btn btn-primary" onclick="abrirFormProduto()">＋ Novo Produto</button>
+                        <button class="btn btn-primary" onclick="abrirFormProduto()"><i class="ui-icon" data-lucide="plus" aria-hidden="true"></i> Novo Produto</button>
                     </div>
                     <div id="lista-predefinidos" class="lista-predefinidos">
                         <!-- preenchido por renderPredefinidos() -->
@@ -567,15 +576,22 @@
         <!-- MODAL PRODUTO (Pré-definidos) -->
         <div class="modal-bg" id="modal-produto-bg">
             <div class="modal" style="max-width:460px">
-                <h3 id="modal-produto-titulo">📦 Novo Produto</h3>
+                <h3 id="modal-produto-titulo"><i class="ui-icon" data-lucide="package" aria-hidden="true"></i> Novo Produto</h3>
                 <div class="fgrid" style="margin-top:14px">
                     <div class="fg" style="grid-column:1/-1">
                         <label>Nome do Produto</label>
                         <input type="text" id="prod-nome" placeholder="Ex: 1kg Turbinado Direto">
                     </div>
                     <div class="fg">
-                        <label>Ícone (emoji)</label>
-                        <input type="text" id="prod-icon" placeholder="🌱" maxlength="4" style="font-size:22px;text-align:center">
+                        <label>Ícone</label>
+                        <select id="prod-icon">
+                            <option value="package">Produto</option>
+                            <option value="sprout">Muda</option>
+                            <option value="leaf">Folha</option>
+                            <option value="citrus">Frutífero</option>
+                            <option value="tree-pine">Árvore</option>
+                            <option value="factory">Granel</option>
+                        </select>
                     </div>
                     <div class="fg">
                         <label>Preço de Venda (R$)</label>
@@ -588,7 +604,7 @@
                 </div>
                 <input type="hidden" id="prod-edit-id">
                 <div class="btn-row" style="margin-top:18px">
-                    <button class="btn btn-primary" onclick="salvarProduto()">💾 Salvar</button>
+                    <button class="btn btn-primary" onclick="salvarProduto()"><i class="ui-icon" data-lucide="save" aria-hidden="true"></i> Salvar</button>
                     <button class="btn btn-ghost" onclick="fecharFormProduto()">Cancelar</button>
                 </div>
             </div>
@@ -597,12 +613,12 @@
         <!-- MODAL CONFIRMAÇÃO -->
         <div class="modal-bg" id="modal-bg">
             <div class="modal">
-                <h3>🚀 Confirmar Venda</h3>
+                <h3><i class="ui-icon" data-lucide="badge-check" aria-hidden="true"></i> Confirmar Venda</h3>
                 <p>Verifique os dados. Após confirmar, você e Gabriel serão notificados.</p>
                 <div class="modal-detail" id="modal-detail"></div>
                 <div class="btn-row">
-                    <button class="btn btn-primary" onclick="confirmarVenda()">✅ Confirmar</button>
-                    <button class="btn btn-danger" onclick="fecharModal()">❌ Cancelar</button>
+                    <button class="btn btn-primary" onclick="confirmarVenda()"><i class="ui-icon" data-lucide="circle-check" aria-hidden="true"></i> Confirmar</button>
+                    <button class="btn btn-danger" onclick="fecharModal()"><i class="ui-icon" data-lucide="circle-x" aria-hidden="true"></i> Cancelar</button>
                 </div>
             </div>
         </div>
@@ -612,11 +628,11 @@
             <div class="modal" style="max-width:580px;padding:0;overflow:hidden">
                 <!-- Cabeçalho do modal -->
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--borda)">
-                    <h3 style="margin:0">🧾 Nota Fiscal</h3>
+                    <h3 style="margin:0"><i class="ui-icon" data-lucide="receipt-text" aria-hidden="true"></i> Nota Fiscal</h3>
                     <div class="btn-row" style="margin:0;gap:8px">
-                        <button class="btn btn-info btn-sm" onclick="imprimirNF()">🖨️ Imprimir</button>
-                        <button class="btn btn-primary btn-sm" onclick="gerarPDFNF()">📄 PDF</button>
-                        <button class="btn btn-ghost btn-sm" onclick="fecharNF()">✕</button>
+                        <button class="btn btn-info btn-sm" onclick="imprimirNF()"><i class="ui-icon" data-lucide="printer" aria-hidden="true"></i> Imprimir</button>
+                        <button class="btn btn-primary btn-sm" onclick="gerarPDFNF()"><i class="ui-icon" data-lucide="file-text" aria-hidden="true"></i> PDF</button>
+                        <button class="btn btn-ghost btn-sm" onclick="fecharNF()" aria-label="Fechar"><i class="ui-icon" data-lucide="x" aria-hidden="true"></i></button>
                     </div>
                 </div>
                 <!-- Corpo da nota (área imprimível) -->
@@ -629,7 +645,7 @@
         <!-- MODAL EDITAR -->
         <div class="modal-bg" id="modal-edit-bg">
             <div class="modal" style="max-width:520px">
-                <h3>✏️ Editar Venda</h3>
+                <h3><i class="ui-icon" data-lucide="pencil" aria-hidden="true"></i> Editar Venda</h3>
                 <div class="fgrid" style="margin-top:14px">
                     <div class="fg"><label>Quantidade</label><input type="number" id="edit-qtd" min="1"></div>
                     <div class="fg"><label>Valor Unitário (R$)</label><input type="number" id="edit-valor" step="0.01"></div>
@@ -645,7 +661,7 @@
                 </div>
                 <div class="fg" style="margin-bottom:16px"><label>Observações</label><textarea id="edit-obs"></textarea></div>
                 <div class="btn-row">
-                    <button class="btn btn-primary" onclick="salvarEdicao()">💾 Salvar</button>
+                    <button class="btn btn-primary" onclick="salvarEdicao()"><i class="ui-icon" data-lucide="save" aria-hidden="true"></i> Salvar</button>
                     <button class="btn btn-ghost" onclick="fecharEdit()">Cancelar</button>
                 </div>
             </div>
