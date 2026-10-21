@@ -1436,3 +1436,240 @@ tbody td {
     min-width: 80px;
     text-align: right;
 }
+
+/* ── AJUSTES RESPONSIVOS ── */
+@media (max-width: 1024px) {
+    .content {
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+
+    header {
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+}
+
+@media (max-width: 768px) {
+    header {
+        gap: 12px;
+    }
+
+    .header-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        font-size: 0;
+    }
+
+    .header-right strong,
+    .header-right .user-badge {
+        display: none;
+    }
+
+    .btn-logout {
+        margin-left: 0;
+        padding: 8px 10px;
+        white-space: nowrap;
+    }
+
+    .content {
+        width: 100%;
+        padding: 18px 16px calc(92px + env(safe-area-inset-bottom));
+    }
+
+    .box {
+        padding: 18px;
+    }
+
+    .cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .card {
+        padding: 14px;
+        min-width: 0;
+    }
+
+    .card-val {
+        font-size: clamp(20px, 5vw, 26px);
+        overflow-wrap: anywhere;
+    }
+
+    .fgrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .venda-layout,
+    .venda-col-prod,
+    .venda-col-cart {
+        min-width: 0;
+    }
+
+    .tbl-wrap {
+        max-width: 100%;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .tbl-wrap table {
+        min-width: 640px;
+    }
+
+    .week-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .modal-bg {
+        padding: 12px;
+        align-items: flex-start;
+        overflow-y: auto;
+    }
+
+    .modal {
+        margin: auto 0;
+        max-height: calc(100dvh - 24px);
+        overflow-y: auto;
+        padding: 22px;
+    }
+
+    #modal-nf-bg .modal {
+        overflow-y: hidden;
+    }
+
+    #modal-nf-bg .modal > div:first-child {
+        flex-wrap: wrap;
+        padding: 14px 16px;
+    }
+
+    #nf-corpo {
+        max-height: calc(100dvh - 112px) !important;
+        padding: 16px !important;
+    }
+
+    .toast {
+        right: 12px;
+        bottom: calc(78px + env(safe-area-inset-bottom));
+        left: 12px;
+        max-width: none;
+    }
+}
+
+@media (max-width: 480px) {
+    .login-box {
+        width: calc(100% - 32px);
+        padding: 32px 24px;
+    }
+
+    header {
+        padding: 10px 12px;
+    }
+
+    .logo {
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .logo-icon {
+        width: 36px;
+        height: 36px;
+        flex: 0 0 36px;
+    }
+
+    .logo h1 {
+        font-size: 14px;
+    }
+
+    .logo p {
+        font-size: 9px;
+    }
+
+    .header-right {
+        flex: 0 0 auto;
+    }
+
+    .btn-logout {
+        padding: 8px;
+        font-size: 0;
+    }
+
+    .btn-logout .ui-icon {
+        width: 18px;
+        height: 18px;
+    }
+
+    .content {
+        padding: 16px 12px calc(88px + env(safe-area-inset-bottom));
+    }
+
+    .sec-title {
+        font-size: 20px;
+    }
+
+    .box {
+        padding: 14px;
+        border-radius: 12px;
+    }
+
+    .box h2 {
+        font-size: 15px;
+    }
+
+    .cards {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .fgrid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .grade-produtos {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .prod-card {
+        padding: 14px 8px;
+    }
+
+    .cart-item {
+        gap: 7px;
+        flex-wrap: wrap;
+    }
+
+    .cart-info {
+        flex-basis: calc(100% - 40px);
+    }
+
+    .cart-qty {
+        margin-left: 31px;
+    }
+
+    .week-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    nav {
+        gap: 4px;
+        padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    }
+
+    .tab.mobile-fixed {
+        min-width: 0;
+        padding: 8px 4px;
+    }
+
+    .tab .tab-label {
+        font-size: 10px;
+    }
+
+    .btn-row > .btn {
+        flex: 1 1 auto;
+        justify-content: center;
+    }
+
+    #modal-nf-bg .btn-row > .btn {
+        flex: 0 0 auto;
+    }
+}
