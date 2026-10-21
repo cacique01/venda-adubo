@@ -41,6 +41,7 @@ const observadorIcones = new MutationObserver(registros => {
     ));
     if (novosIcones) renderizarIcones();
 });
+// Observa mudanças no DOM para renderizar ícones adicionados dinamicamente
 observadorIcones.observe(document.body, { childList: true, subtree: true });
 renderizarIcones();
 
@@ -155,6 +156,7 @@ function tick() {
 tick(); setInterval(tick, 1000);
 
 // ── tabs ─────────────────────────────────────────────────────────
+// Abre/fecha menu de abas no mobile
 function toggleLogoMenu() {
     const menu = el('logo-menu');
     const trigger = document.querySelector('.logo-menu-trigger');
@@ -291,10 +293,14 @@ function lancarVenda() {
         custo: i.custo, subtotal: +(i.qtd * i.unit).toFixed(2)
     }));
 
-    vendaPendente = { data, itens, total, cliente: cli, pagamento: pgto, obs, status: 'Confirmada' };
+    const vendedor = window._usuarioNome || window._usuarioEmail;
+    if (!vendedor) return toast('Não foi possível identificar o usuário logado.', 'err');
+
+    vendaPendente = { data, itens, total, cliente: cli, vendedor, pagamento: pgto, obs, status: 'Confirmada' };
 
     el('modal-detail').innerHTML = `
         <p>${iconeMarkup('user-round')} Cliente: <span>${cli}</span></p>
+        <p>${iconeMarkup('user-round')} Vendedor: <span>${vendedor}</span></p>
         <p>${iconeMarkup('credit-card')} Pagamento: <span>${pgto}</span></p>
         <p>${iconeMarkup('calendar-days')} Data: <span>${formatarData(data)}</span></p>
         <div style="margin:10px 0;padding:10px;background:rgba(255,255,255,.05);border-radius:8px;font-size:13px">
@@ -435,6 +441,7 @@ window.renderHistorico = function () {
                 : (itens[0]?.nome || produtoLabel(v));
             return `<tr>
             <td>${i + 1}</td><td>${formatarData(v.data)}</td><td>${v.cliente || '–'}</td>
+            <td>${v.vendedor || '–'}</td>
             <td style="max-width:200px;white-space:normal;font-size:12px">${label}</td>
             <td>${qtdVenda(v)}</td>
             <td>—</td><td><strong>R$ ${v.total.toFixed(2)}</strong></td>
@@ -450,7 +457,7 @@ window.renderHistorico = function () {
             </div></td>
         </tr>`;
         }).join('')
-        : '<tr><td colspan="11" style="text-align:center;color:var(--cinza);padding:20px">Nenhuma venda encontrada.</td></tr>';
+        : '<tr><td colspan="12" style="text-align:center;color:var(--cinza);padding:20px">Nenhuma venda encontrada.</td></tr>';
 };
 
 // ── semana ────────────────────────────────────────────────────────
@@ -680,11 +687,11 @@ function exportarPDF() {
 function exportarCSV() {
     const mes = el('filtro-mes')?.value;
     const lista = mes ? vendas().filter(v => v.data && v.data.startsWith(mes)) : vendas();
-    const header = 'Data,Cliente,Produtos,Qtd Total,Total,Pagamento,Status\n';
+    const header = 'Data,Cliente,Vendedor,Produtos,Qtd Total,Total,Pagamento,Status\n';
     const rows = lista.map(v => {
         const itens = vendaItens(v);
         const labelProd = itens.map(i => `${i.nome} x${i.qtd}`).join(' | ');
-        return `${v.data},"${v.cliente || ''}","${labelProd}",${qtdVenda(v)},${v.total},${v.pagamento || ''},${v.status || 'Confirmada'}`;
+        return `${v.data},"${v.cliente || ''}","${v.vendedor || ''}","${labelProd}",${qtdVenda(v)},${v.total},${v.pagamento || ''},${v.status || 'Confirmada'}`;
     }).join('\n');
     const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -783,7 +790,7 @@ function renderNF(v) {
             </div>
             <div style="background:#f9fafb;border-radius:8px;padding:10px 14px">
                 <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700;margin-bottom:4px">Vendedor</div>
-                <div style="font-size:14px;font-weight:600;color:#111">${window._usuarioNome || 'Gabriel Gatti'}</div>
+                <div style="font-size:14px;font-weight:600;color:#111">${v.vendedor || 'Não informado'}</div>
             </div>
         </div>
 
@@ -901,7 +908,7 @@ function gerarPDFNF() {
     doc.text('PAGAMENTO', 18, y + 6); doc.text('VENDEDOR', 116, y + 6);
     doc.setTextColor(17, 17, 17); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
     doc.text(v.pagamento || 'Não informado', 18, y + 14);
-    doc.text(window._usuarioNome || 'Gabriel Gatti', 116, y + 14);
+    doc.text(v.vendedor || 'Não informado', 116, y + 14);
 
     // Obs
     if (v.obs) {

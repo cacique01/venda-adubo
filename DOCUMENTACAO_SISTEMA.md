@@ -992,6 +992,7 @@ service cloud.firestore {
 | `produto`   | string    | 'turbinado' ou 'frutifero'          |
 | `tipo`      | string    | 'direta' ou 'consorcio'             |
 | `cliente`   | string    | Nome do cliente                     |
+| `vendedor`  | string    | Nome do usuário logado que lançou a venda |
 | `pagamento` | string    | Dinheiro, PIX, Cartão ou A prazo    |
 | `obs`       | string    | Observações opcionais               |
 | `status`    | string    | 'Confirmada' ou 'Cancelada'         |
