@@ -11,9 +11,11 @@
 2. [index.html — Estrutura e Firebase](#2-indexhtml--estrutura-e-firebase)
 3. [js/script.js — Lógica do Sistema](#3-jsscriptjs--lógica-do-sistema)
 4. [css/style.css — Estilos Resumidos](#4-cssstylecss--estilos-resumidos)
-5. [Modo Manutenção — Como Funciona](#5-modo-manutenção--como-funciona)
+5. [Acesso ao Sistema — Como Funciona](#5-acesso-ao-sistema--como-funciona)
 6. [Fluxo Completo de uma Venda](#6-fluxo-completo-de-uma-venda)
 7. [Tabela de Preços e chaves localStorage](#7-tabela-de-preços-e-chaves-localstorage)
+8. [Webhook Sendfy — Cloudflare Pages](#8-webhook-sendfy--cloudflare-pages)
+9. [Aplicativo Android e iOS](#9-aplicativo-android-e-ios)
 
 ---
 
@@ -26,11 +28,17 @@ index.html          ← Ponto de entrada. Contém o HTML, o bloco Firebase e
 js/script.js        ← Toda a lógica de negócio: cálculos, renderização de
                       tabelas, salvar vendas, exportar, etc.
 
+functions/          ← Cloudflare Pages Function que recebe vendas da Sendfy
+                      em /api/webhook-venda.
+
 css/style.css       ← Estilos visuais: cores, layout, cards, tabelas,
                       animações, modo responsivo.
 
-Firebase Firestore  ← Banco de dados em nuvem (coleção "vendas").
-                      Cada documento = uma venda.
+Firebase Firestore  ← Banco de dados em nuvem (coleções "vendas" e "gastos").
+                      Cada documento = uma venda ou um gasto.
+
+firestore.rules     ← Regras de acesso: qualquer usuário autenticado pode
+                      consultar e gerenciar vendas e gastos.
 
 localStorage        ← Armazenamento local do navegador.
                       Guarda preços (gg_precos) e metas (gg_metas).
@@ -135,11 +143,18 @@ const firebaseConfig = {
 São as credenciais do projeto Firebase. Cada campo identifica o projeto:
 
 - `apiKey` — chave de acesso à API (pode ser restrita por domínio)
-- `authDomain` — domínio usado para autenticação
+- `authDomain` — domínio de autenticação do Firebase. Mantenha o domínio
+  padrão `gabriel-gatti-vendas.firebaseapp.com`, a menos que um domínio
+  personalizado de autenticação tenha sido configurado no Firebase.
 - `projectId` — ID único do projeto no Firebase
 - `storageBucket` — endereço do armazenamento de arquivos (não usado aqui)
 - `messagingSenderId` — ID para notificações push (não usado aqui)
 - `appId` — identificador da aplicação web
+
+Como o site agora é servido em `https://gattiadubo.davitech.com.br`, adicione
+`gattiadubo.davitech.com.br` à lista de domínios autorizados em
+**Firebase Console → Authentication → Settings → Authorized domains**.
+Isso é separado do `authDomain` configurado acima.
 
 ```javascript
 const app = initializeApp(firebaseConfig);
@@ -176,68 +191,57 @@ no objeto `window` (que é global e acessível de qualquer lugar).
 
 ---
 
-### 2.5 Controle de Autenticação
-
-```javascript
-const permitirAcessoSemLogin = true;
-```
-**Essa é a chave do Modo Manutenção.** Quando `true`, o sistema abre sem
-precisar de login. Quando `false`, exige login normal.
+### 2.5 Controle de Autenticação e acesso aos dados
 
 ```javascript
 onAuthStateChanged(auth, (user) => { ... });
 ```
 Essa função fica "ouvindo" o estado de autenticação. Ela é chamada
-automaticamente em dois momentos:
-1. Quando a página carrega (para verificar se já tem alguém logado)
-2. Quando alguém faz login ou logout
+automaticamente quando a página carrega e quando alguém faz login ou logout.
+O parâmetro `user` contém os dados da conta autenticada, ou `null` quando
+ninguém está logado.
 
-O parâmetro `user` contém os dados do usuário logado, ou `null` se
-ninguém estiver logado.
+Toda conta com e-mail que conseguir fazer login no Firebase Authentication pode
+consultar, criar, editar e excluir documentos nas coleções `vendas` e
+`gastos`. As regras em `firestore.rules` exigem uma sessão Firebase
+autenticada com e-mail; elas não liberam acesso anônimo.
 
-```javascript
-const usuarioLogado = !!user || permitirAcessoSemLogin;
-```
-O `!!user` converte o objeto `user` para `true` ou `false`. Se `user` for
-`null`, vira `false`. Se `permitirAcessoSemLogin` for `true`, o resultado
-final sempre será `true`, independente de ter login ou não.
+Para aplicar a política, publique o conteúdo de `firestore.rules` em
+**Firebase Console → Firestore Database → Rules**. Alterar o arquivo neste
+repositório, por si só, não altera as regras já publicadas no Firebase.
 
 ---
 
-### 2.6 Tabela de Usuários (USUARIOS)
+### 2.6 Perfis de Usuários (PERFIS_USUARIOS)
 
 ```javascript
-const USUARIOS = {
+const PERFIS_USUARIOS = {
     'davi.246gol@gmail.com':        { nome: 'Davi',    admin: true  },
     'gvgatti10@gmail.com':           { nome: 'Gabriel', admin: true  },
     'jamilefernandes2007@gmail.com': { nome: 'Jamile',  admin: false }
 };
 ```
-Mapeamento dos usuários do sistema. O e-mail é a chave, e o valor contém:
+Mapeamento opcional de perfis conhecidos. O e-mail é a chave, e o valor contém:
 - `nome` — nome que aparece no sistema e nas vendas
-- `admin` — se `true`, vê o badge de coroa 👑 e tem acesso total
+- `admin` — se `true`, exibe o ícone de coroa no cabeçalho. Este campo não
+  controla as permissões de leitura ou gravação no Firestore.
 
 ```javascript
-if (user && USUARIOS[user.email]) {
-    window._usuarioNome  = USUARIOS[user.email].nome;
-    window._usuarioAdmin = USUARIOS[user.email].admin;
+if (user && PERFIS_USUARIOS[user.email]) {
+    window._usuarioNome  = PERFIS_USUARIOS[user.email].nome;
+    window._usuarioAdmin = PERFIS_USUARIOS[user.email].admin;
     window._usuarioEmail = user.email;
 } else if (user) {
-    // E-mail não cadastrado na tabela — acesso básico
+    // Conta autenticada sem perfil personalizado
     window._usuarioNome  = user.email;
     window._usuarioAdmin = false;
     window._usuarioEmail = user.email;
-} else {
-    // Sem login — modo manutenção
-    window._usuarioNome  = 'Manutenção';
-    window._usuarioAdmin = true;
-    window._usuarioEmail = '';
 }
 ```
-Lógica de três casos:
-1. Usuário logado E e-mail está na tabela → usa o nome e permissão cadastrados
-2. Usuário logado MAS e-mail não está na tabela → mostra o e-mail como nome, sem admin
-3. Sem login (modo manutenção) → nome "Manutenção", admin `true`
+Lógica:
+1. Usuário logado e e-mail com perfil personalizado → usa o nome e o ícone cadastrados
+2. Usuário logado sem perfil personalizado → mostra o e-mail como nome e o ícone padrão
+3. Sem login → permanece na tela de login, sem exibir o sistema.
 
 ---
 
@@ -317,7 +321,7 @@ Tela de login. Visível por padrão quando o sistema carrega.
 <div id="app-content" style="display:none"> ... </div>
 ```
 O sistema completo. Começa **escondido** (`display:none`) e só aparece
-após o login (ou modo manutenção).
+após o login.
 
 ```html
 <div id="loading">
@@ -342,8 +346,8 @@ e o próprio botão (`this`).
 ```html
 <span class="user-badge" id="user-badge"></span>
 ```
-Exibe o nome e o ícone do usuário logado (👑 admin / 👤 funcionário /
-🔧 Modo Manutenção). O conteúdo é preenchido pelo JavaScript.
+Exibe o nome e o ícone do usuário logado (👑 admin / 👤 funcionário).
+O conteúdo é preenchido pelo JavaScript.
 
 ```html
 <button class="btn-logout" onclick="window._signOut()">🚪 Sair</button>
@@ -802,28 +806,16 @@ O CSS usa **variáveis CSS** (`:root`) para centralizar as cores do tema:
 
 ---
 
-## 5. Modo Manutenção — Como Funciona
+## 5. Acesso ao Sistema — Como Funciona
 
-O modo de manutenção permite abrir a interface sem entrar na conta para
-inspecionar as abas. Ele não autentica o usuário nem libera acesso ao Firestore.
-
-### Uso
-
-- Ao abrir uma nova sessão do navegador, o modo de manutenção fica ativo e a
-  interface aparece com o usuário "Manutenção".
-- Sem login, as vendas e os gastos não são carregados, e não é possível lançar
-  vendas. Produtos e configurações locais continuam disponíveis.
-- O botão **Sair da conta** encerra o modo de manutenção nesta aba e mostra a
-  tela de login. Para entrar novamente, informe as credenciais Firebase.
-- A escolha de sair fica registrada em `sessionStorage` para não reabrir a
-  interface ao atualizar a mesma aba.
+O sistema só exibe as telas e consulta os dados depois que o usuário entra com
+uma conta Firebase Authentication. Sem uma sessão autenticada, permanece na
+tela de login. Para encerrar a sessão, use o botão **Sair da conta**.
 
 ### Segurança
 
-As vendas e os gastos só são consultados depois de autenticar no Firebase.
-Não altere as regras do Firestore para `allow read, write: if true`: isso
-permitiria acesso público aos dados. O modo de manutenção é apenas para
-inspecionar a interface e não substitui o login.
+As regras do Firestore também devem exigir autenticação; esconder a interface
+no navegador não substitui as regras de acesso do banco.
 
 ---
 
@@ -909,6 +901,81 @@ inspecionar a interface e não substitui o login.
 | `obs`       | string    | Observações opcionais               |
 | `status`    | string    | 'Confirmada' ou 'Cancelada'         |
 | `criadoEm`  | Timestamp | Timestamp do servidor Firebase      |
+
+---
+
+## 8. Webhook Sendfy — Cloudflare Pages
+
+A função `functions/api/webhook-venda.js` recebe os pedidos da Sendfy no
+endereço `https://gattiadubo.davitech.com.br/api/webhook-venda`. Ela valida
+o token e os dados do pedido, consulta a coleção `produtos` no Firestore e
+cria a venda em `vendas`. Reenvios do mesmo pedido na mesma janela de dois
+minutos não duplicam o documento.
+
+### Configuração no Cloudflare Pages
+
+O projeto Pages deve publicar a pasta `functions/` junto com os arquivos
+estáticos do site. Configure as seguintes variáveis em **Settings → Variables
+and Secrets** para o ambiente de produção (e também para Preview, se for
+testar por lá):
+
+| Nome | Configuração |
+|------|--------------|
+| `FIREBASE_PROJECT_ID` | ID do projeto Firebase |
+| `FIREBASE_CLIENT_EMAIL` | E-mail da conta de serviço Firebase |
+| `FIREBASE_PRIVATE_KEY` | Secret: chave privada PEM da conta de serviço |
+| `WEBHOOK_TOKEN` | Secret: token compartilhado com a Sendfy |
+
+Crie uma conta de serviço no Google Cloud associada ao projeto Firebase e
+conceda a ela somente o papel **Cloud Datastore User**. Cadastre a chave
+privada como secret; não a inclua nos arquivos do site nem no Git. A função
+usa essa chave para obter um token OAuth e acessar a API REST do Firestore.
+Confirme também que a **Cloud Firestore API** está habilitada no projeto
+Google Cloud.
+
+### Configuração da Sendfy
+
+Configure o webhook de saída para enviar um `POST` à URL acima. Envie o token
+no cabeçalho `X-Webhook-Token` (preferencial) ou no campo `token` do corpo.
+O corpo pode ser JSON ou `application/x-www-form-urlencoded` e deve conter:
+telefone, nome do cliente, linha (`Turbinado` ou `Frutífera`), tamanho em kg,
+quantidade e forma de pagamento. O nome aceita `name`, `nome` ou `cliente`;
+o telefone aceita `phone`, `whatsapp_number` ou `telefone`.
+
+Depois de salvar as variáveis, publique uma nova versão do projeto Pages e
+atualize na Sendfy qualquer URL antiga `/.netlify/functions/webhook-venda`
+para `/api/webhook-venda`. Os testes automatizados do endpoint são executados
+com `npm test`.
+
+---
+
+## 9. Aplicativo Android e iOS
+
+O aplicativo é criado com Capacitor e reutiliza a interface web e o mesmo
+Firebase/Cloudflare. A configuração fica em `capacitor.config.json`; o
+conteúdo web que vai para os apps é gerado em `dist/` pelo script
+`scripts/build.js`. Os projetos nativos ficam nas pastas `android/` e `ios/`,
+e os ícones e telas de abertura usam as imagens em `assets/`.
+
+### Desenvolvimento
+
+1. Instale Node.js 22 ou superior e execute `npm install`.
+2. Para atualizar a interface dentro dos projetos nativos, execute
+   `npm run cap:sync`.
+3. Abra o Android Studio com `npm run android:open` ou abra o projeto
+   `ios/App/App.xcworkspace` no Xcode com `npm run ios:open`.
+4. Execute o app em um emulador ou dispositivo pela IDE. Para publicar,
+   configure a assinatura Android e os certificados/perfis Apple.
+
+O Android pode ser compilado em Linux com Android Studio e Android SDK
+instalados. A compilação e publicação para iOS exigem macOS e Xcode. Este
+repositório contém os projetos nativos, mas não inclui os arquivos de
+assinatura das lojas.
+
+O site continua sendo publicado no Cloudflare Pages. Quando o app chama o
+mesmo Firebase, as coleções Firestore continuam sincronizadas entre os
+usuários; dados de preço e metas mantidos em `localStorage` continuam
+específicos de cada instalação/dispositivo.
 
 ---
 

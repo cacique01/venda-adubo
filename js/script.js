@@ -275,7 +275,7 @@ function renderGradeProdutos() {
 
 // ── form nova venda ───────────────────────────────────────────────
 function limparForm() {
-    ['cliente', 'obs'].forEach(id => { if (el(id)) el(id).value = ''; });
+    ['cliente', 'telefone', 'obs'].forEach(id => { if (el(id)) el(id).value = ''; });
     limparCarrinho();
 }
 
@@ -283,6 +283,7 @@ function lancarVenda() {
     if (carrinho.length === 0) return toast('Adicione pelo menos um produto ao carrinho.', 'err');
     const data = el('data-venda').value;
     const cli = el('cliente').value.trim() || 'Não informado';
+    const telefone = (el('telefone')?.value || '').replace(/\D/g, '');
     const pgto = el('pagamento').value;
     const obs = el('obs').value.trim();
     if (!data) return toast('Informe a data da venda.', 'err');
@@ -298,7 +299,7 @@ function lancarVenda() {
     const vendedor = window._resolverVendedor({ vendedorEmail: usuario.email });
 
     vendaPendente = {
-        data, itens, total, cliente: cli, responsavel: vendedor, vendedor,
+        data, itens, total, cliente: cli, telefone, responsavel: vendedor, vendedor,
         vendedorEmail: usuario.email, vendedorUid: usuario.uid,
         pagamento: pgto, obs, status: 'Confirmada'
     };
@@ -350,6 +351,7 @@ function abrirEdit(id) {
     el('edit-qtd').value = v.qtd;
     el('edit-valor').value = v.unit;
     el('edit-cliente').value = v.cliente;
+    el('edit-telefone').value = v.telefone || '';
     el('edit-pgto').value = v.pagamento;
     el('edit-obs').value = v.obs || '';
     el('modal-edit-bg').classList.add('open');
@@ -365,6 +367,7 @@ async function salvarEdicao() {
         await window._updateDoc(window._doc(window._db, 'vendas', editId), {
             qtd, unit, total: +(qtd * unit).toFixed(2),
             cliente: el('edit-cliente').value,
+            telefone: el('edit-telefone').value.replace(/\D/g, ''),
             pagamento: el('edit-pgto').value,
             obs: el('edit-obs').value
         });
@@ -445,6 +448,7 @@ window.renderHistorico = function () {
                 : (itens[0]?.nome || produtoLabel(v));
             return `<tr>
             <td>${i + 1}</td><td>${formatarData(v.data)}</td><td>${v.cliente || '–'}</td>
+            <td>${v.telefone || '–'}</td>
             <td>${window._resolverVendedor(v)}</td>
             <td style="max-width:200px;white-space:normal;font-size:12px">${label}</td>
             <td>${qtdVenda(v)}</td>
@@ -688,11 +692,11 @@ function exportarPDF() {
 function exportarCSV() {
     const mes = el('filtro-mes')?.value;
     const lista = mes ? vendas().filter(v => v.data && v.data.startsWith(mes)) : vendas();
-    const header = 'Data,Cliente,Vendedor,Produtos,Qtd Total,Total,Pagamento,Status\n';
+    const header = 'Data,Cliente,Telefone,Vendedor,Produtos,Qtd Total,Total,Pagamento,Status\n';
     const rows = lista.map(v => {
         const itens = vendaItens(v);
         const labelProd = itens.map(i => `${i.nome} x${i.qtd}`).join(' | ');
-        return `${v.data},"${v.cliente || ''}","${window._resolverVendedor(v)}","${labelProd}",${qtdVenda(v)},${v.total},${v.pagamento || ''},${v.status || 'Confirmada'}`;
+        return `${v.data},"${v.cliente || ''}","${v.telefone || ''}","${window._resolverVendedor(v)}","${labelProd}",${qtdVenda(v)},${v.total},${v.pagamento || ''},${v.status || 'Confirmada'}`;
     }).join('\n');
     const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
