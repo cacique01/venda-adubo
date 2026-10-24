@@ -812,6 +812,24 @@ O sistema só exibe as telas e consulta os dados depois que o usuário entra com
 uma conta Firebase Authentication. Sem uma sessão autenticada, permanece na
 tela de login. Para encerrar a sessão, use o botão **Sair da conta**.
 
+### Autorização de domínio para login
+
+Para autenticar pelo domínio personalizado, configure o endereço nos dois
+lugares abaixo:
+
+1. No Firebase Console, em **Authentication → Settings → Authorized domains**,
+   adicione `gattiadubo.davitech.com.br` (sem `https://` ou `/`).
+2. No Google Cloud Console do projeto `gabriel-gatti-vendas`, abra
+   **APIs e serviços → Credenciais** e selecione a chave de API usada pelo
+   site. Se a chave tiver restrição de aplicativo por **Sites**, inclua
+   `https://gattiadubo.davitech.com.br/*` nos sites autorizados. Inclua também
+   `https://www.gattiadubo.davitech.com.br/*` somente se esse endereço for
+   utilizado.
+
+Se a chave não tiver restrição por site, não é necessário alterá-la. Se houver
+restrições de APIs, mantenha liberadas as APIs necessárias ao Firebase
+Authentication. Após salvar, teste o login no domínio personalizado.
+
 ### Segurança
 
 As regras do Firestore também devem exigir autenticação; esconder a interface
