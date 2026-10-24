@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Gabriel Gatti – Sistema de Vendas</title>
 
     <link rel="icon" href="img/icon.jpeg" />
@@ -40,12 +40,11 @@
               const app = initializeApp(firebaseConfig);
               const db = getFirestore(app);
               const auth = getAuth(app);
-              const USUARIOS = {
+              const PERFIS_USUARIOS = {
                   'davi.246gol@gmail.com': { nome: 'Davi', admin: true },
                   'gvgatti10@gmail.com': { nome: 'Gabriel', admin: true },
                   'jamilefernandes2007@gmail.com': { nome: 'Jamile', admin: false }
               };
-              let modoManutencao = sessionStorage.getItem('gg_modo_manutencao') !== 'off';
               let unsubscribeVendas = null;
               let unsubscribeGastos = null;
               let loadingTimeout = null;
@@ -60,8 +59,6 @@
               window._doc = doc;
               window._serverTimestamp = serverTimestamp;
               window._signOut = async () => {
-                  modoManutencao = false;
-                  sessionStorage.setItem('gg_modo_manutencao', 'off');
                   try {
                       await signOut(auth);
                       if (!auth.currentUser) {
@@ -76,7 +73,7 @@
               window._resolverVendedor = (venda) => {
                   const responsavel = (venda.responsavel || '').trim();
                   const email = (venda.vendedorEmail || '').trim().toLowerCase();
-                  return responsavel || (email && USUARIOS[email]?.nome) || venda.vendedor || email || 'Não informado';
+                  return responsavel || (email && PERFIS_USUARIOS[email]?.nome) || venda.vendedor || email || 'Não informado';
               };
               window._vendas = [];
               window._gastos = [];
@@ -95,35 +92,17 @@
                   unsubscribeGastos = null;
                   clearTimeout(loadingTimeout);
 
-                  if (user || modoManutencao) {
+                  if (user) {
                       loginScreen.classList.add('hidden');
                       appContent.style.display = 'block';
 
-                      if (user) {
-                          const email = (user.email || '').toLowerCase();
-                          window._usuarioNome = USUARIOS[email]?.nome || user.email || 'Usuário';
-                          window._usuarioAdmin = USUARIOS[email]?.admin || false;
-                          window._usuarioEmail = user.email || '';
-                      } else {
-                          window._usuarioNome = 'Manutenção';
-                          window._usuarioAdmin = false;
-                          window._usuarioEmail = '';
-                      }
+                      const email = (user.email || '').toLowerCase();
+                      window._usuarioNome = PERFIS_USUARIOS[email]?.nome || user.email || 'Usuário';
+                      window._usuarioAdmin = PERFIS_USUARIOS[email]?.admin || false;
+                      window._usuarioEmail = user.email || '';
 
                       if (badge) {
                           badge.innerHTML = `<i class="ui-icon" data-lucide="${window._usuarioAdmin ? 'crown' : 'user-round'}" aria-hidden="true"></i> ${window._usuarioNome}`;
-                      }
-
-                      if (!user) {
-                          window._vendas = [];
-                          window._gastos = [];
-                          if (loadingEl) loadingEl.style.display = 'none';
-                          if (typeof window.renderPainel === 'function') window.renderPainel();
-                          if (typeof window.renderHistorico === 'function') window.renderHistorico();
-                          if (typeof window.renderSemana === 'function') window.renderSemana();
-                          if (typeof window.renderMeta === 'function') window.renderMeta();
-                          if (typeof window.renderGastos === 'function') window.renderGastos();
-                          return;
                       }
 
                       loadingTimeout = setTimeout(() => {
