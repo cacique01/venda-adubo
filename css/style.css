@@ -1294,6 +1294,54 @@ tbody td {
     flex-shrink: 0;
 }
 
+/* ── ESTOQUE ── */
+.badge-warn {
+    background: rgba(245, 158, 11, .15);
+    color: var(--amarelo);
+    border: 1px solid rgba(245, 158, 11, .3);
+}
+
+.estoque-saldo {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    min-width: 76px;
+    flex-shrink: 0;
+}
+
+.estoque-saldo strong {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--branco);
+    line-height: 1;
+}
+
+.prod-card .pc-estoque {
+    font-size: 11px;
+    color: var(--cinza);
+}
+
+.prod-card .pc-estoque.zerado { color: var(--vermelho); }
+
+.mov-item { padding: 9px 14px; }
+
+.mov-delta {
+    font-size: 16px;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+
+.mov-pos { color: var(--neon); }
+.mov-neg { color: var(--vermelho); }
+
+@media(max-width:768px) {
+    .predef-item { flex-wrap: wrap; }
+    .predef-info { flex-basis: calc(100% - 50px); }
+    .estoque-saldo { flex-direction: row; align-items: center; min-width: 0; }
+    .predef-acoes { margin-left: auto; }
+}
+
 /* ── RESPONSIVO: mobile (1 coluna) ── */
 @media(max-width:768px) {
     .venda-layout {

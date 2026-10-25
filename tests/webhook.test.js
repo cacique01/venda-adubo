@@ -136,6 +136,19 @@ test('creates a WhatsApp sale through Firestore REST', async () => {
   assert.equal(write.update.fields.total.integerValue, '70');
   assert.equal(write.update.fields.telefone.stringValue, '5565999998888');
   assert.equal(write.update.fields.origem.stringValue, 'whatsapp');
+  assert.equal(write.update.fields.estoqueBaixado.booleanValue, true);
+
+  // baixa de estoque e movimentação saem no mesmo commit atômico
+  const writes = JSON.parse(commitCall.options.body).writes;
+  assert.equal(writes.length, 3);
+  assert.match(writes[1].transform.document, /\/produtos\/dF4$/);
+  assert.deepEqual(writes[1].transform.fieldTransforms[0], {
+    fieldPath: 'estoque',
+    increment: { integerValue: '-2' },
+  });
+  assert.match(writes[2].update.name, /\/movimentacoes\/mv_wa_f0a5cb9598a5935505e0cfcf$/);
+  assert.equal(writes[2].update.fields.qtd.integerValue, '-2');
+  assert.equal(writes[2].update.fields.tipo.stringValue, 'venda');
 });
 
 test('treats Firestore document conflicts as duplicate webhook deliveries', async () => {

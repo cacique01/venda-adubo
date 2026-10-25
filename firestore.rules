@@ -2,14 +2,56 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Só as contas da equipe entram (mesma lista PERFIS_USUARIOS do index.html).
+    // Antes bastava estar logado; agora o e-mail precisa estar nesta lista.
+    function isStaff() {
+      return request.auth != null
+          && request.auth.token.email != null
+          && request.auth.token.email.lower() in [
+               'davi.246gol@gmail.com',
+               'gvgatti10@gmail.com',
+               'jamilefernandes2007@gmail.com'
+             ];
+    }
+
+    function isAdmin() {
+      return isStaff()
+          && request.auth.token.email.lower() in [
+               'davi.246gol@gmail.com',
+               'gvgatti10@gmail.com'
+             ];
+    }
+
     match /vendas/{vendaId} {
-      allow read, write: if request.auth != null
-                         && request.auth.token.email != null;
+      allow read, write: if isStaff();
     }
 
     match /gastos/{gastoId} {
-      allow read, write: if request.auth != null
-                         && request.auth.token.email != null;
+      allow read, write: if isStaff();
+    }
+
+    // Cadastro de produtos + saldo de estoque.
+    // Admin faz tudo; vendedor só mexe no saldo (venda e movimentação de estoque).
+    match /produtos/{produtoId} {
+      allow read: if isStaff();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+                    || (isStaff()
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['estoque', 'atualizadoEm']));
+    }
+
+    // Histórico de movimentações: só cria, nunca edita nem apaga (trilha de auditoria).
+    match /movimentacoes/{movId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update, delete: if false;
+    }
+
+    // Metas e demais configurações
+    match /config/{docId} {
+      allow read, write: if isStaff();
     }
   }
 }

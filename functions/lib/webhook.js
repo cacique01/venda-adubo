@@ -134,6 +134,7 @@ function buildSale(product, data, date) {
     obs: 'Venda via WhatsApp (Sendfy)',
     status: 'Confirmada',
     origem: 'whatsapp',
+    estoqueBaixado: true,
   };
 }
 
@@ -285,23 +286,51 @@ async function findProduct(env, token, data, fetchImpl) {
   };
 }
 
-async function createSale(env, token, id, sale, fetchImpl) {
+async function createSale(env, token, id, sale, product, fetchImpl) {
   const url = `${FIRESTORE_BASE_URL}/projects/${encodeURIComponent(env.FIREBASE_PROJECT_ID)}`
     + `/databases/(default)/documents:commit`;
-  const documentName = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/vendas/${id}`;
+  const base = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+  const item = sale.itens[0];
+  const movement = {
+    prodId: product.id,
+    prodNome: product.nome,
+    tipo: 'venda',
+    qtd: -item.qtd,
+    motivo: `Venda para ${sale.cliente}`,
+    usuario: 'WhatsApp',
+    usuarioEmail: '',
+    vendaId: id,
+  };
+  const toFields = (data) => Object.fromEntries(
+    Object.entries(data).map(([key, value]) => [key, firestoreValue(value)]),
+  );
+  // Um único commit atômico: a venda, a baixa do estoque e o registro da movimentação
+  // gravam juntos ou não gravam. A venda vem primeiro; se ela já existir (webhook repetido)
+  // o commit inteiro falha com 409 e o estoque não é baixado duas vezes.
   return firestoreRequest(url, token, fetchImpl, {
     method: 'POST',
     body: JSON.stringify({
-      writes: [{
-        update: {
-          name: documentName,
-          fields: Object.fromEntries(
-            Object.entries(sale).map(([key, value]) => [key, firestoreValue(value)]),
-          ),
+      writes: [
+        {
+          update: { name: `${base}/vendas/${id}`, fields: toFields(sale) },
+          currentDocument: { exists: false },
+          updateTransforms: [{ fieldPath: 'criadoEm', setToServerValue: 'REQUEST_TIME' }],
         },
-        currentDocument: { exists: false },
-        updateTransforms: [{ fieldPath: 'criadoEm', setToServerValue: 'REQUEST_TIME' }],
-      }],
+        {
+          transform: {
+            document: `${base}/produtos/${product.id}`,
+            fieldTransforms: [
+              { fieldPath: 'estoque', increment: { integerValue: String(-item.qtd) } },
+              { fieldPath: 'atualizadoEm', setToServerValue: 'REQUEST_TIME' },
+            ],
+          },
+        },
+        {
+          update: { name: `${base}/movimentacoes/mv_${id}`, fields: toFields(movement) },
+          currentDocument: { exists: false },
+          updateTransforms: [{ fieldPath: 'criadoEm', setToServerValue: 'REQUEST_TIME' }],
+        },
+      ],
     }),
   });
 }
@@ -372,7 +401,7 @@ export async function handleWebhook(request, env, dependencies = {}) {
     const id = await saleId(data, product.id, date);
     const sale = buildSale(product, data, date);
     try {
-      await createSale(env, token, id, sale, fetchImpl);
+      await createSale(env, token, id, sale, product, fetchImpl);
     } catch (error) {
       if (error.status === 409) return json(200, { ok: true, duplicada: true, id });
       throw error;

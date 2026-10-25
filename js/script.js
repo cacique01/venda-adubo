@@ -1,8 +1,11 @@
-// ── config local ──────────────────────────────────────────────────
-let config = JSON.parse(localStorage.getItem('gg_config') || '{}');
-let metas  = JSON.parse(localStorage.getItem('gg_metas')  || '{"valor":0,"unidades":0}');
+// ── metas (vêm do Firestore: doc config/metas) ─────────────────────
+// Somente leitura aqui; salvarMeta() grava no banco e o listener atualiza window._metas.
+const metas = {
+    get valor() { return window._metas?.valor || 0; },
+    get unidades() { return window._metas?.unidades || 0; }
+};
 
-// Produtos dinâmicos (substitui o antigo objeto 'precos' hardcoded)
+// Lista usada só na importação única para o Firestore (veja importarProdutosIniciais)
 const PRODUTOS_PADRAO = [
     { id: 'dT1',  icon: 'sprout', nome: '1kg Turbinado Direto',    preco: 9,   custo: 3  },
     { id: 'dT4',  icon: 'leaf', nome: '4kg Turbinado Direto',    preco: 25,  custo: 7  },
@@ -45,14 +48,10 @@ const observadorIcones = new MutationObserver(registros => {
 observadorIcones.observe(document.body, { childList: true, subtree: true });
 renderizarIcones();
 
-let produtos = JSON.parse(localStorage.getItem('gg_produtos') || 'null') || PRODUTOS_PADRAO;
-produtos = produtos.map(p => ({ ...p, icon: normalizarIcone(p.icon) }));
-function salvarProdutosLS() { localStorage.setItem('gg_produtos', JSON.stringify(produtos)); }
-
 // Compat: objeto precos legado para não quebrar cálculos antigos
 function getPrecosLegado() {
     const m = {};
-    produtos.forEach(p => { m[p.id] = p.preco; });
+    listaProdutos().forEach(p => { m[p.id] = p.preco; });
     return m;
 }
 
@@ -174,7 +173,7 @@ function mudarTab(id, btn) {
     const trigger = document.querySelector('.logo-menu-trigger');
     if (trigger) trigger.setAttribute('aria-expanded', 'false');
     el('tab-' + id).classList.add('active');
-    const fns = { painel: renderPainel, historico: renderHistorico, semana: renderSemana, meta: renderMeta, config: carregarConfig, nova: renderGradeProdutos, gastos: renderGastos };
+    const fns = { painel: renderPainel, historico: renderHistorico, semana: renderSemana, meta: renderMeta, estoque: renderEstoque, nova: renderGradeProdutos, gastos: renderGastos };
     if (fns[id]) fns[id]();
 }
 
@@ -183,7 +182,7 @@ function mudarTab(id, btn) {
 let carrinho = [];
 
 function adicionarAoCarrinho(id) {
-    const p = produtos.find(x => x.id === id);
+    const p = listaProdutos().find(x => x.id === id);
     if (!p) return;
     const existente = carrinho.find(x => x.prodId === id);
     if (existente) {
@@ -260,15 +259,16 @@ function renderCarrinho() {
 function renderGradeProdutos() {
     const grade = el('grade-produtos');
     if (!grade) return;
-    if (produtos.length === 0) {
-        grade.innerHTML = '<p style="color:var(--cinza);font-size:13px;text-align:center;padding:20px 0">Nenhum produto cadastrado. Acesse <strong>Pré-definidos</strong> para adicionar.</p>';
+    if (listaProdutos().length === 0) {
+        grade.innerHTML = '<p style="color:var(--cinza);font-size:13px;text-align:center;padding:20px 0">Nenhum produto cadastrado. Acesse <strong>Estoque</strong> para adicionar.</p>';
         return;
     }
-    grade.innerHTML = produtos.map(p => `
+    grade.innerHTML = listaProdutos().map(p => `
         <div class="prod-card" data-id="${p.id}" onclick="adicionarAoCarrinho('${p.id}')">
             ${iconeMarkup(p.icon, 'pc-icon ui-icon')}
             <span class="pc-nome">${p.nome}</span>
             <span class="pc-preco">R$ ${parseFloat(p.preco).toFixed(2)}</span>
+            <span class="pc-estoque ${nEstoque(p) <= 0 ? 'zerado' : ''}">Estoque: ${nEstoque(p)}</span>
         </div>
     `).join('');
 }
@@ -325,11 +325,33 @@ function fecharModal() { el('modal-bg').classList.remove('open'); vendaPendente 
 
 async function confirmarVenda() {
     if (!vendaPendente) return;
+    const fs = window._fs, db = window._db;
+    const itensComProduto = vendaPendente.itens
+        .map(i => ({ item: i, prod: listaProdutos().find(p => p.id === i.prodId) }))
+        .filter(x => x.prod);
+
+    // avisa se o saldo não cobre a venda (permite vender mesmo assim)
+    const faltando = itensComProduto.filter(x => nEstoque(x.prod) < x.item.qtd);
+    if (faltando.length) {
+        const txt = faltando.map(x => `• ${x.prod.nome}: saldo ${nEstoque(x.prod)}, venda ${x.item.qtd}`).join('\n');
+        if (!confirm(`Estoque insuficiente:\n${txt}\n\nLançar a venda mesmo assim? O saldo ficará negativo.`)) return;
+    }
+
     try {
-        await window._addDoc(window._col, { ...vendaPendente, criadoEm: window._serverTimestamp() });
+        // Tudo em um único batch: a venda e a baixa de estoque gravam juntas ou não gravam.
+        const batch = fs.writeBatch(db);
+        const vendaRef = fs.doc(window._col);
+        batch.set(vendaRef, { ...vendaPendente, estoqueBaixado: true, criadoEm: fs.serverTimestamp() });
+        itensComProduto.forEach(({ item, prod }) => {
+            baixarEstoque(batch, prod, -item.qtd);
+            registrarMov(batch, prod, 'venda', -item.qtd, `Venda para ${vendaPendente.cliente}`, {
+                vendaId: vendaRef.id, saldoApos: nEstoque(prod) - item.qtd
+            });
+        });
+        await batch.commit();
         fecharModal();
         limparForm();
-        toast('Venda lançada e sincronizada.');
+        toast('Venda lançada e estoque atualizado.');
     } catch (e) {
         toast('Erro ao salvar: ' + e.message, 'err');
     }
@@ -337,9 +359,25 @@ async function confirmarVenda() {
 
 // ── cancelar / editar ─────────────────────────────────────────────
 async function cancelarVenda(id) {
-    if (!confirm('Cancelar esta venda?')) return;
+    const v = vendas().find(x => x._id === id);
+    if (!v || v.status === 'Cancelada') return;
+    if (!confirm('Cancelar esta venda?' + (v.estoqueBaixado ? ' Os produtos voltam para o estoque.' : ''))) return;
+    const fs = window._fs, db = window._db;
     try {
-        await window._updateDoc(window._doc(window._db, 'vendas', id), { status: 'Cancelada' });
+        const batch = fs.writeBatch(db);
+        batch.update(fs.doc(db, 'vendas', id), { status: 'Cancelada' });
+        // Só devolve ao estoque vendas que tiveram baixa (as anteriores ao controle de estoque não tiveram)
+        if (v.estoqueBaixado) {
+            (v.itens || []).forEach(i => {
+                const prod = listaProdutos().find(p => p.id === i.prodId);
+                if (!prod) return;
+                baixarEstoque(batch, prod, i.qtd);
+                registrarMov(batch, prod, 'cancelamento', i.qtd, `Venda cancelada (${v.cliente || 'cliente'})`, {
+                    vendaId: id, saldoApos: nEstoque(prod) + i.qtd
+                });
+            });
+        }
+        await batch.commit();
         toast('Venda cancelada.', 'warn');
     } catch (e) { toast('Erro: ' + e.message, 'err'); }
 }
@@ -384,7 +422,7 @@ function vendaItens(v) {
 
 function custoLegado(v) {
     // tenta achar custo pelo prodId legado
-    const p = produtos.find(x => x.id === (v.prodId || ''));
+    const p = listaProdutos().find(x => x.id === (v.prodId || ''));
     if (p) return p.custo;
     // fallback pelos campos antigos
     if (v.tamanho === '50') return 88;
@@ -524,12 +562,35 @@ window.renderSemana = function () {
 };
 
 // ── metas ─────────────────────────────────────────────────────────
-function salvarMeta() {
-    metas.valor = parseFloat(el('meta-valor').value) || 0;
-    metas.unidades = parseInt(el('meta-unidades').value) || 0;
-    localStorage.setItem('gg_metas', JSON.stringify(metas));
-    renderMeta();
+async function salvarMeta() {
+    const valor = parseFloat(el('meta-valor').value) || 0;
+    const unidades = parseInt(el('meta-unidades').value) || 0;
+    const fs = window._fs;
+    try {
+        await fs.setDoc(fs.doc(window._db, 'config', 'metas'), {
+            valor, unidades, atualizadoEm: fs.serverTimestamp(), atualizadoPor: window._usuarioEmail || ''
+        });
+        toast('Meta salva no banco de dados.');
+    } catch (e) { toast('Erro ao salvar meta: ' + e.message, 'err'); }
 }
+
+// Migração única: se existir meta salva só neste aparelho e o banco ainda não tem, envia para o Firestore
+window.migrarMetasLocais = async function () {
+    if (!window._metasCarregadas || window._metasExistem || window._migrandoMetas) return;
+    let local = null;
+    try { local = JSON.parse(localStorage.getItem('gg_metas') || 'null'); } catch (e) { /* ignora */ }
+    if (!local || !(Number(local.valor) > 0 || Number(local.unidades) > 0)) return;
+    window._migrandoMetas = true;
+    try {
+        const fs = window._fs;
+        await fs.setDoc(fs.doc(window._db, 'config', 'metas'), {
+            valor: Number(local.valor) || 0, unidades: Number(local.unidades) || 0,
+            atualizadoEm: fs.serverTimestamp(), atualizadoPor: window._usuarioEmail || ''
+        });
+        localStorage.removeItem('gg_metas');
+    } catch (e) { console.warn('Não foi possível migrar as metas locais:', e.message); }
+    finally { window._migrandoMetas = false; }
+};
 
 window.renderMeta = function () {
     if (el('meta-valor')) el('meta-valor').value = metas.valor || '';
@@ -537,7 +598,7 @@ window.renderMeta = function () {
     const mes = new Date().toISOString().slice(0, 7);
     const vMes = vendas().filter(v => v.data && v.data.startsWith(mes) && v.status !== 'Cancelada');
     const fat = vMes.reduce((s, v) => s + v.total, 0);
-    const unid = vMes.reduce((s, v) => s + v.qtd, 0);
+    const unid = vMes.reduce((s, v) => s + qtdVenda(v), 0);
     const pctF = metas.valor > 0 ? Math.min((fat / metas.valor) * 100, 100) : 0;
     const pctU = metas.unidades > 0 ? Math.min((unid / metas.unidades) * 100, 100) : 0;
 
@@ -550,7 +611,7 @@ window.renderMeta = function () {
 
     const faltaVal = Math.max((metas.valor || 0) - fat, 0);
     const faltaUni = Math.max((metas.unidades || 0) - unid, 0);
-    const medP = produtos.length > 0 ? produtos.reduce((s, p) => s + p.preco, 0) / produtos.length : 15;
+    const medP = listaProdutos().length > 0 ? listaProdutos().reduce((s, p) => s + p.preco, 0) / listaProdutos().length : 15;
     el('previsao-geral').innerHTML = metas.valor > 0
         ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
         <div class="meta-box"><strong>${iconeMarkup('badge-dollar-sign')} Para bater a meta de faturamento</strong>
@@ -564,52 +625,132 @@ window.renderMeta = function () {
         : '<p style="color:var(--cinza);font-size:13px">Defina sua meta acima.</p>';
 };
 
-// ── pré-definidos (CRUD de produtos) ─────────────────────────────
-function carregarConfig() {
-    renderPredefinidos();
+// ── produtos e estoque (tudo no Firestore) ───────────────────────
+// Coleções: "produtos" (cadastro + saldo `estoque`) e "movimentacoes" (histórico).
+function listaProdutos() { return window._produtos || []; }
+function ehAdmin() { return !!window._usuarioAdmin; }
+function nEstoque(p) { return Number(p.estoque) || 0; }
+
+function esc(texto) {
+    return String(texto ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function renderPredefinidos() {
-    const lista = el('lista-predefinidos');
+function statusEstoque(p) {
+    const q = nEstoque(p), min = Number(p.estoqueMinimo) || 0;
+    if (q < 0) return { cls: 'badge-cancel', txt: 'Negativo' };
+    if (q === 0) return { cls: 'badge-cancel', txt: 'Zerado' };
+    if (min > 0 && q <= min) return { cls: 'badge-warn', txt: 'Baixo' };
+    return { cls: 'badge-ok', txt: 'Em estoque' };
+}
+
+// Monta (sem gravar) o documento de movimentação dentro de um batch
+function registrarMov(batch, p, tipo, delta, motivo, extra = {}) {
+    const fs = window._fs;
+    batch.set(fs.doc(fs.collection(window._db, 'movimentacoes')), {
+        prodId: p.id, prodNome: p.nome, tipo, qtd: delta, motivo: motivo || '',
+        usuario: window._usuarioNome || '', usuarioEmail: window._usuarioEmail || '',
+        criadoEm: fs.serverTimestamp(), ...extra
+    });
+}
+
+function baixarEstoque(batch, p, delta) {
+    const fs = window._fs;
+    batch.update(fs.doc(window._db, 'produtos', p.id), {
+        estoque: fs.increment(delta), atualizadoEm: fs.serverTimestamp()
+    });
+}
+
+const ROTULO_MOV = { entrada: 'Entrada', saida: 'Saída', ajuste: 'Ajuste', venda: 'Venda', cancelamento: 'Cancelamento' };
+
+function formatarDataHora(ts) {
+    const d = ts && ts.toDate ? ts.toDate() : null;
+    return d ? d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'agora';
+}
+
+window.renderEstoque = function () {
+    const lista = el('lista-estoque');
     if (!lista) return;
-    if (produtos.length === 0) {
-        lista.innerHTML = '<p style="color:var(--cinza);font-size:13px;text-align:center;padding:30px 0">Nenhum produto cadastrado ainda.</p>';
-        return;
-    }
-    lista.innerHTML = produtos.map(p => `
+    const prods = listaProdutos();
+    const admin = ehAdmin();
+
+    // cards-resumo
+    const unidades = prods.reduce((s, p) => s + Math.max(nEstoque(p), 0), 0);
+    const valorCusto = prods.reduce((s, p) => s + Math.max(nEstoque(p), 0) * (Number(p.custo) || 0), 0);
+    const alertas = prods.filter(p => ['Baixo', 'Zerado', 'Negativo'].includes(statusEstoque(p).txt)).length;
+    el('cards-estoque').innerHTML = `
+    <div class="card"><div class="card-label">Produtos</div><div class="card-val">${prods.length}</div><div class="card-sub">cadastrados</div></div>
+    <div class="card"><div class="card-label">Unidades em Estoque</div><div class="card-val">${unidades}</div><div class="card-sub">saldo atual</div></div>
+    <div class="card"><div class="card-label">Valor em Estoque</div><div class="card-val">R$ ${valorCusto.toFixed(2)}</div><div class="card-sub">a preço de custo</div></div>
+    <div class="card"><div class="card-label">Atenção</div><div class="card-val" style="color:${alertas ? 'var(--amarelo)' : 'var(--neon)'}">${alertas}</div><div class="card-sub">baixo / zerado</div></div>`;
+
+    // botão novo produto e importação (só admin)
+    el('btn-novo-produto').style.display = admin ? '' : 'none';
+    el('estoque-importar').style.display = (admin && window._produtosCarregados && prods.length === 0) ? 'block' : 'none';
+
+    if (prods.length === 0) {
+        lista.innerHTML = `<p style="color:var(--cinza);font-size:13px;text-align:center;padding:30px 0">${window._produtosCarregados ? 'Nenhum produto cadastrado ainda.' : 'Carregando produtos...'}</p>`;
+    } else {
+        lista.innerHTML = prods.map(p => {
+            const st = statusEstoque(p);
+            return `
         <div class="predef-item">
             ${iconeMarkup(p.icon, 'predef-icon ui-icon')}
             <div class="predef-info">
-                <div class="predef-nome">${p.nome}</div>
-                <div class="predef-sub">Preço: <strong>R$ ${parseFloat(p.preco).toFixed(2)}</strong> · Custo: R$ ${parseFloat(p.custo).toFixed(2)}</div>
+                <div class="predef-nome">${esc(p.nome)}</div>
+                <div class="predef-sub">Preço: <strong>R$ ${(Number(p.preco) || 0).toFixed(2)}</strong> · Custo: R$ ${(Number(p.custo) || 0).toFixed(2)}${p.whatsapp ? ' · WhatsApp' : ''}${Number(p.estoqueMinimo) > 0 ? ' · Mín: ' + Number(p.estoqueMinimo) : ''}</div>
             </div>
+            <div class="estoque-saldo"><strong>${nEstoque(p)}</strong><span class="badge ${st.cls}">${st.txt}</span></div>
             <div class="predef-acoes">
-                <button class="btn btn-warn btn-sm" onclick="abrirFormProduto('${p.id}')" title="Editar">${iconeMarkup('pencil')}</button>
-                <button class="btn btn-danger btn-sm" onclick="excluirProduto('${p.id}')" title="Excluir">${iconeMarkup('trash-2')}</button>
+                <button class="btn btn-info btn-sm" onclick="abrirMov('${p.id}')" title="Movimentar estoque">${iconeMarkup('plus')}${iconeMarkup('minus')}</button>
+                ${admin ? `<button class="btn btn-warn btn-sm" onclick="abrirFormProduto('${p.id}')" title="Editar">${iconeMarkup('pencil')}</button>
+                <button class="btn btn-danger btn-sm" onclick="excluirProduto('${p.id}')" title="Excluir">${iconeMarkup('trash-2')}</button>` : ''}
             </div>
-        </div>
-    `).join('');
+        </div>`;
+        }).join('');
+    }
+
+    // histórico de movimentações
+    const movs = window._movs || [];
+    el('lista-movs').innerHTML = movs.length ? movs.map(m => {
+        const delta = Number(m.qtd) || 0;
+        return `
+        <div class="predef-item mov-item">
+            <div class="predef-info">
+                <div class="predef-nome">${esc(m.prodNome)}</div>
+                <div class="predef-sub">${ROTULO_MOV[m.tipo] || esc(m.tipo)} · ${formatarDataHora(m.criadoEm)} · ${esc(m.usuario || 'sistema')}${m.motivo ? ' · ' + esc(m.motivo) : ''}</div>
+            </div>
+            <div class="mov-delta ${delta >= 0 ? 'mov-pos' : 'mov-neg'}">${delta >= 0 ? '+' : ''}${delta}</div>
+        </div>`;
+    }).join('') : '<p style="color:var(--cinza);font-size:13px;text-align:center;padding:20px 0">Nenhuma movimentação registrada.</p>';
+};
+
+// ── cadastro de produto (admin) ──────────────────────────────────
+function alternarCamposWhatsApp() {
+    const sim = el('prod-whatsapp').value === 'sim';
+    el('fg-prod-linha').style.display = sim ? '' : 'none';
+    el('fg-prod-tamanho').style.display = sim ? '' : 'none';
 }
 
 function abrirFormProduto(id) {
+    if (!ehAdmin()) return toast('Só administradores editam o cadastro de produtos.', 'err');
     const isEdicao = !!id;
     el('modal-produto-titulo').innerHTML = isEdicao
         ? `${iconeMarkup('pencil')} Editar Produto`
         : `${iconeMarkup('package')} Novo Produto`;
     el('prod-edit-id').value = id || '';
-    if (isEdicao) {
-        const p = produtos.find(x => x.id === id);
-        if (!p) return;
-        el('prod-nome').value = p.nome;
-        el('prod-icon').value = normalizarIcone(p.icon);
-        el('prod-preco').value = p.preco;
-        el('prod-custo').value = p.custo;
-    } else {
-        el('prod-nome').value = '';
-        el('prod-icon').value = 'package';
-        el('prod-preco').value = '';
-        el('prod-custo').value = '';
-    }
+    el('fg-prod-estoque').style.display = isEdicao ? 'none' : '';
+    const p = isEdicao ? listaProdutos().find(x => x.id === id) : null;
+    if (isEdicao && !p) return;
+    el('prod-nome').value = p ? p.nome : '';
+    el('prod-icon').value = normalizarIcone(p ? p.icon : 'package');
+    el('prod-preco').value = p ? p.preco : '';
+    el('prod-custo').value = p ? p.custo : '';
+    el('prod-estoque').value = '';
+    el('prod-minimo').value = p && p.estoqueMinimo ? p.estoqueMinimo : '';
+    el('prod-whatsapp').value = p && p.whatsapp ? 'sim' : 'nao';
+    el('prod-linha').value = p && p.linha ? p.linha : 'turbinado';
+    el('prod-tamanho').value = p && p.tamanho ? p.tamanho : '';
+    alternarCamposWhatsApp();
     el('modal-produto-bg').classList.add('open');
 }
 
@@ -617,36 +758,127 @@ function fecharFormProduto() {
     el('modal-produto-bg').classList.remove('open');
 }
 
-function salvarProduto() {
+async function salvarProduto() {
+    if (!ehAdmin()) return toast('Sem permissão.', 'err');
+    const fs = window._fs, db = window._db;
     const nome = el('prod-nome').value.trim();
     const icon = normalizarIcone(el('prod-icon').value);
     const preco = parseFloat(el('prod-preco').value) || 0;
     const custo = parseFloat(el('prod-custo').value) || 0;
+    const estoqueMinimo = Math.max(parseInt(el('prod-minimo').value) || 0, 0);
+    const whatsapp = el('prod-whatsapp').value === 'sim';
+    const linha = whatsapp ? el('prod-linha').value : null;
+    const tamanho = whatsapp ? (parseInt(el('prod-tamanho').value) || 0) : null;
     if (!nome) return toast('Informe o nome do produto.', 'err');
     if (preco <= 0) return toast('Informe um preço válido.', 'err');
+    if (whatsapp && tamanho < 1) return toast('Informe o tamanho (kg) para vender pelo WhatsApp.', 'err');
 
-    const editId = el('prod-edit-id').value;
-    if (editId) {
-        const idx = produtos.findIndex(x => x.id === editId);
-        if (idx >= 0) produtos[idx] = { ...produtos[idx], nome, icon, preco, custo };
-    } else {
-        const newId = 'p_' + Date.now();
-        produtos.push({ id: newId, nome, icon, preco, custo });
+    const dados = { nome, icon, preco, custo, estoqueMinimo, whatsapp, linha, tamanho, atualizadoEm: fs.serverTimestamp() };
+    const idEdicao = el('prod-edit-id').value;
+    const btn = el('btn-salvar-produto');
+    btn.disabled = true;
+    try {
+        if (idEdicao) {
+            await fs.updateDoc(fs.doc(db, 'produtos', idEdicao), dados);
+        } else {
+            const inicial = Math.max(parseInt(el('prod-estoque').value) || 0, 0);
+            const batch = fs.writeBatch(db);
+            const ref = fs.doc(fs.collection(db, 'produtos'));
+            batch.set(ref, { ...dados, estoque: inicial, criadoEm: fs.serverTimestamp() });
+            if (inicial > 0) registrarMov(batch, { id: ref.id, nome }, 'entrada', inicial, 'Estoque inicial', { saldoApos: inicial });
+            await batch.commit();
+        }
+        fecharFormProduto();
+        toast('Produto salvo no banco de dados.');
+    } catch (e) {
+        toast('Erro ao salvar: ' + e.message, 'err');
+    } finally {
+        btn.disabled = false;
     }
-    salvarProdutosLS();
-    fecharFormProduto();
-    renderPredefinidos();
-    renderGradeProdutos(); // atualiza aba Venda
-    toast('Produto salvo.');
 }
 
-function excluirProduto(id) {
-    if (!confirm('Excluir este produto?')) return;
-    produtos = produtos.filter(x => x.id !== id);
-    salvarProdutosLS();
-    renderPredefinidos();
-    renderGradeProdutos();
-    toast('Produto removido.', 'warn');
+async function excluirProduto(id) {
+    if (!ehAdmin()) return toast('Sem permissão.', 'err');
+    const p = listaProdutos().find(x => x.id === id);
+    if (!p) return;
+    if (!confirm(`Excluir "${p.nome}"? As vendas antigas continuam no histórico.`)) return;
+    try {
+        await window._fs.deleteDoc(window._fs.doc(window._db, 'produtos', id));
+        toast('Produto removido.', 'warn');
+    } catch (e) { toast('Erro: ' + e.message, 'err'); }
+}
+
+// Migração única: leva a lista antiga (localStorage ou padrão) para o Firestore
+async function importarProdutosIniciais() {
+    if (!ehAdmin()) return toast('Sem permissão.', 'err');
+    let origem = PRODUTOS_PADRAO, rotulo = 'lista padrão';
+    try {
+        const local = JSON.parse(localStorage.getItem('gg_produtos') || 'null');
+        if (Array.isArray(local) && local.length) { origem = local; rotulo = 'lista deste aparelho'; }
+    } catch (e) { /* usa a padrão */ }
+    if (!confirm(`Importar ${origem.length} produtos (${rotulo}) para o banco de dados? O estoque de cada um começa em 0.`)) return;
+    const fs = window._fs, db = window._db;
+    try {
+        const batch = fs.writeBatch(db);
+        origem.forEach(p => {
+            batch.set(fs.doc(db, 'produtos', String(p.id)), {
+                nome: p.nome, icon: normalizarIcone(p.icon),
+                preco: Number(p.preco) || 0, custo: Number(p.custo) || 0,
+                estoque: 0, estoqueMinimo: 0, whatsapp: false,
+                criadoEm: fs.serverTimestamp(), atualizadoEm: fs.serverTimestamp()
+            });
+        });
+        await batch.commit();
+        try { localStorage.removeItem('gg_produtos'); } catch (e) { /* ok */ }
+        toast('Produtos importados. Agora registre as entradas de estoque.');
+    } catch (e) { toast('Erro ao importar: ' + e.message, 'err'); }
+}
+
+// ── movimentação manual de estoque ───────────────────────────────
+function atualizarRotuloMov() {
+    el('mov-qtd-label').textContent = el('mov-tipo').value === 'ajuste' ? 'Novo saldo (contagem)' : 'Quantidade';
+}
+
+function abrirMov(id) {
+    const p = listaProdutos().find(x => x.id === id);
+    if (!p) return;
+    el('mov-prod-id').value = id;
+    el('mov-produto-info').innerHTML = `<strong style="color:#fff">${esc(p.nome)}</strong> · saldo atual: <strong style="color:var(--neon)">${nEstoque(p)}</strong>`;
+    el('mov-tipo').value = 'entrada';
+    el('mov-qtd').value = '';
+    el('mov-motivo').value = '';
+    atualizarRotuloMov();
+    el('modal-mov-bg').classList.add('open');
+}
+
+function fecharMov() { el('modal-mov-bg').classList.remove('open'); }
+
+async function salvarMovimentacao() {
+    const p = listaProdutos().find(x => x.id === el('mov-prod-id').value);
+    if (!p) return;
+    const tipo = el('mov-tipo').value;
+    const qtd = parseInt(el('mov-qtd').value);
+    const motivo = el('mov-motivo').value.trim();
+    if (isNaN(qtd) || qtd < 0 || (tipo !== 'ajuste' && qtd === 0)) return toast('Informe uma quantidade válida.', 'err');
+
+    let delta = tipo === 'entrada' ? qtd : tipo === 'saida' ? -qtd : qtd - nEstoque(p);
+    if (delta === 0) return toast('O saldo já é esse valor.', 'warn');
+    if (tipo === 'saida' && nEstoque(p) + delta < 0 && !confirm(`O saldo ficará negativo (${nEstoque(p) + delta}). Continuar?`)) return;
+
+    const btn = el('btn-salvar-mov');
+    btn.disabled = true;
+    try {
+        const batch = window._fs.writeBatch(window._db);
+        baixarEstoque(batch, p, delta);
+        registrarMov(batch, p, tipo, delta, motivo, { saldoApos: nEstoque(p) + delta });
+        await batch.commit();
+        fecharMov();
+        toast('Movimentação registrada.');
+    } catch (e) {
+        toast('Erro: ' + e.message, 'err');
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 // ── exportar PDF ──────────────────────────────────────────────────

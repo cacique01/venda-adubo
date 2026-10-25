@@ -15,7 +15,7 @@
 6. [Fluxo Completo de uma Venda](#6-fluxo-completo-de-uma-venda)
 7. [Tabela de Preços e chaves localStorage](#7-tabela-de-preços-e-chaves-localstorage)
 8. [Webhook Sendfy — Cloudflare Pages](#8-webhook-sendfy--cloudflare-pages)
-9. [Aplicativo Android e iOS](#9-aplicativo-android-e-ios)
+9. [PWA, Controle de Estoque e Segurança](#9-pwa-controle-de-estoque-e-segurança)
 
 ---
 
@@ -37,12 +37,13 @@ css/style.css       ← Estilos visuais: cores, layout, cards, tabelas,
 Firebase Firestore  ← Banco de dados em nuvem (coleções "vendas" e "gastos").
                       Cada documento = uma venda ou um gasto.
 
-firestore.rules     ← Regras de acesso: qualquer usuário autenticado pode
-                      consultar e gerenciar vendas e gastos.
+firestore.rules     ← Regras de acesso: só os e-mails da equipe (lista em
+                      isStaff/isAdmin) acessam vendas, gastos, produtos,
+                      movimentações e config. Veja a seção 9.
 
-localStorage        ← Armazenamento local do navegador.
-                      Guarda preços (gg_precos) e metas (gg_metas).
-                      Não vai para a nuvem, fica só no dispositivo.
+localStorage        ← Não guarda mais dados do negócio. Produtos, estoque e
+                      metas ficam no Firestore (seção 9). As chaves antigas
+                      gg_produtos e gg_metas só são lidas uma vez, para migrar.
 ```
 
 **Tecnologias usadas:**
@@ -949,33 +950,49 @@ com `npm test`.
 
 ---
 
-## 9. Aplicativo Android e iOS
+## 9. PWA, Controle de Estoque e Segurança
 
-O aplicativo é criado com Capacitor e reutiliza a interface web e o mesmo
-Firebase/Cloudflare. A configuração fica em `capacitor.config.json`; o
-conteúdo web que vai para os apps é gerado em `dist/` pelo script
-`scripts/build.js`. Os projetos nativos ficam nas pastas `android/` e `ios/`,
-e os ícones e telas de abertura usam as imagens em `assets/`.
+### PWA (instalável no celular/PC)
+- `manifest.webmanifest` — nome, cores e ícones (`icons/`).
+- `sw.js` — service worker que guarda só o "casco" do app (HTML/CSS/JS/ícones)
+  para abrir mais rápido e funcionar como app instalado. Dados do Firestore
+  nunca passam por ele. Para forçar atualização do cache, mude `VERSAO` em `sw.js`.
+- No `index.html`: `<link rel="manifest">`, meta tags do iOS e o registro do
+  service worker (não registra dentro do app Capacitor).
+- Instalar: Chrome/Android → menu ⋮ → "Instalar app"; iPhone → Safari →
+  Compartilhar → "Adicionar à Tela de Início".
 
-### Desenvolvimento
+### Coleções do Firestore
+| Coleção | Conteúdo |
+|---|---|
+| `vendas` | Vendas. Novas vendas têm `estoqueBaixado: true`. |
+| `gastos` | Gastos variáveis. |
+| `produtos` | Cadastro (nome, ícone, preço, custo) + `estoque` (saldo), `estoqueMinimo` e, se vender pelo WhatsApp, `whatsapp`, `linha`, `tamanho`. |
+| `movimentacoes` | Histórico: entrada, saída, ajuste, venda, cancelamento. Só cria, nunca edita/apaga. |
+| `config/metas` | Metas mensais (`valor`, `unidades`). |
 
-1. Instale Node.js 22 ou superior e execute `npm install`.
-2. Para atualizar a interface dentro dos projetos nativos, execute
-   `npm run cap:sync`.
-3. Abra o Android Studio com `npm run android:open` ou abra o projeto
-   `ios/App/App.xcworkspace` no Xcode com `npm run ios:open`.
-4. Execute o app em um emulador ou dispositivo pela IDE. Para publicar,
-   configure a assinatura Android e os certificados/perfis Apple.
+### Como o estoque se move
+- **Venda pela página:** um único `writeBatch` grava a venda, baixa o saldo
+  (`increment`) e registra a movimentação. Se o saldo não cobre, o sistema avisa
+  e deixa vender mesmo assim (saldo fica negativo).
+- **Venda pelo WhatsApp (webhook):** o mesmo commit atômico da API REST grava a
+  venda, baixa o produto e cria a movimentação `mv_<id da venda>`.
+- **Cancelamento:** devolve ao estoque só se a venda tem `estoqueBaixado`
+  (vendas anteriores ao controle não devolvem).
+- **Manual:** botão +/− em cada produto — entrada, saída ou ajuste (contagem).
 
-O Android pode ser compilado em Linux com Android Studio e Android SDK
-instalados. A compilação e publicação para iOS exigem macOS e Xcode. Este
-repositório contém os projetos nativos, mas não inclui os arquivos de
-assinatura das lojas.
+### Permissões
+- Admin (`davi.246gol@gmail.com`, `gvgatti10@gmail.com`): cadastra, edita e exclui produtos.
+- Vendedor (`jamilefernandes2007@gmail.com`): vende e movimenta saldo.
+- Qualquer outro e-mail é deslogado na tela e bloqueado pelas regras.
+- **Ao incluir uma pessoa nova, atualize a lista em `PERFIS_USUARIOS` (index.html) e em `firestore.rules`.**
+- Depois de editar `firestore.rules`, publique: Firebase Console → Firestore →
+  Regras → Publicar (ou `firebase deploy --only firestore:rules`).
 
-O site continua sendo publicado no Cloudflare Pages. Quando o app chama o
-mesmo Firebase, as coleções Firestore continuam sincronizadas entre os
-usuários; dados de preço e metas mantidos em `localStorage` continuam
-específicos de cada instalação/dispositivo.
+### Primeiro uso após a atualização
+1. Publique as novas regras do Firestore.
+2. Entre como admin → aba **Estoque** → **Importar produtos para o banco**.
+3. Registre a entrada inicial de cada produto (botão +/−).
 
 ---
 

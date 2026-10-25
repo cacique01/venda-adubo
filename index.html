@@ -6,6 +6,13 @@
     <title>Gabriel Gatti – Sistema de Vendas</title>
 
     <link rel="icon" href="img/icon.jpeg" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0a1a0c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Gatti Adubo" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
     <link href="css/style.css" rel="stylesheet" />
     <script src="https://unpkg.com/lucide@latest"></script>
     <link
@@ -18,7 +25,8 @@
               import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
               import {
                   getFirestore, collection, addDoc, onSnapshot, doc,
-                  updateDoc, query, orderBy, serverTimestamp
+                  updateDoc, setDoc, deleteDoc, writeBatch, increment,
+                  query, orderBy, limit, serverTimestamp
               } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
               import {
                   getAuth,
@@ -47,6 +55,9 @@
               };
               let unsubscribeVendas = null;
               let unsubscribeGastos = null;
+              let unsubscribeProdutos = null;
+              let unsubscribeMovs = null;
+              let unsubscribeMetas = null;
               let loadingTimeout = null;
 
               // ── expor globalmente ──────────────────────────────────────
@@ -58,6 +69,8 @@
               window._updateDoc = updateDoc;
               window._doc = doc;
               window._serverTimestamp = serverTimestamp;
+              // Funções do Firestore usadas pelo estoque (js/script.js)
+              window._fs = { collection, doc, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, increment, serverTimestamp };
               window._signOut = async () => {
                   try {
                       await signOut(auth);
@@ -77,6 +90,15 @@
               };
               window._vendas = [];
               window._gastos = [];
+              window._produtos = [];
+              window._movs = [];
+              window._metas = { valor: 0, unidades: 0 };
+
+              // Re-renderiza as telas que dependem do estoque/produtos/metas
+              function rerenderEstoque() {
+                  ['renderEstoque', 'renderGradeProdutos', 'renderMeta', 'renderPainel', 'renderSemana']
+                      .forEach(fn => { if (typeof window[fn] === 'function') window[fn](); });
+              }
 
               // ── controle de autenticação ───────────────────────────────
 
@@ -86,11 +108,20 @@
                   const badge = document.getElementById('user-badge');
                   const loadingEl = document.getElementById('loading');
 
-                  if (unsubscribeVendas) unsubscribeVendas();
-                  if (unsubscribeGastos) unsubscribeGastos();
-                  unsubscribeVendas = null;
-                  unsubscribeGastos = null;
+                  [unsubscribeVendas, unsubscribeGastos, unsubscribeProdutos, unsubscribeMovs, unsubscribeMetas]
+                      .forEach(fn => { if (fn) fn(); });
+                  unsubscribeVendas = unsubscribeGastos = unsubscribeProdutos = unsubscribeMovs = unsubscribeMetas = null;
                   clearTimeout(loadingTimeout);
+
+                  // Só e-mails da lista PERFIS_USUARIOS entram no sistema.
+                  // (As regras do Firestore fazem a mesma checagem no servidor.)
+                  if (user && !PERFIS_USUARIOS[(user.email || '').toLowerCase()]) {
+                      signOut(auth);
+                      const erro = document.getElementById('login-erro');
+                      erro.textContent = 'Esta conta não tem permissão para acessar o sistema.';
+                      erro.classList.add('show');
+                      return;
+                  }
 
                   if (user) {
                       loginScreen.classList.add('hidden');
@@ -147,6 +178,39 @@
                           window._gastos = [];
                       });
 
+                      // ── listener de produtos / estoque ─────────────────
+                      unsubscribeProdutos = onSnapshot(query(collection(db, "produtos"), orderBy("nome")), (snap) => {
+                          window._produtos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                          window._produtosCarregados = true;
+                          rerenderEstoque();
+                      }, (err) => {
+                          console.error('Produtos erro:', err.code, err.message);
+                          window._produtos = [];
+                          rerenderEstoque();
+                      });
+
+                      // ── listener de movimentações de estoque (últimas 60) ─
+                      unsubscribeMovs = onSnapshot(query(collection(db, "movimentacoes"), orderBy("criadoEm", "desc"), limit(60)), (snap) => {
+                          window._movs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                          if (typeof window.renderEstoque === 'function') window.renderEstoque();
+                      }, (err) => {
+                          console.error('Movimentações erro:', err.code, err.message);
+                          window._movs = [];
+                      });
+
+                      // ── listener das metas (config/metas) ──────────────
+                      unsubscribeMetas = onSnapshot(doc(db, "config", "metas"), (snap) => {
+                          window._metasCarregadas = true;
+                          window._metasExistem = snap.exists();
+                          window._metas = snap.exists()
+                              ? { valor: Number(snap.data().valor) || 0, unidades: Number(snap.data().unidades) || 0 }
+                              : { valor: 0, unidades: 0 };
+                          if (typeof window.migrarMetasLocais === 'function') window.migrarMetasLocais();
+                          rerenderEstoque();
+                      }, (err) => {
+                          console.error('Metas erro:', err.code, err.message);
+                      });
+
                   } else {
                       // Não logado — mostra tela de login
                       loginScreen.classList.remove('hidden');
@@ -157,6 +221,11 @@
                       window._usuarioEmail = '';
                       window._vendas = [];
                       window._gastos = [];
+                      window._produtos = [];
+                      window._movs = [];
+                      window._metas = { valor: 0, unidades: 0 };
+                      window._produtosCarregados = false;
+                      window._metasCarregadas = false;
                   }
               });
 
@@ -359,18 +428,18 @@
                 class="tab"
                 onclick="
                   toggleLogoMenu();
-                  mudarTab('config', this);
+                  mudarTab('estoque', this);
                 "
               >
                 <span class="tab-text"
                   ><i
                     class="ui-icon"
-                    data-lucide="settings"
+                    data-lucide="warehouse"
                     aria-hidden="true"
                   ></i>
-                  Pré-definidos</span
+                  Estoque</span
                 >
-                <span class="tab-label">Pré-def.</span>
+                <span class="tab-label">Estoque</span>
               </button>
             </div>
           </div>
@@ -484,17 +553,17 @@
           ></i>
           <span class="tab-label">Gastos</span>
         </button>
-        <button class="tab" onclick="mudarTab('config', this)">
+        <button class="tab" onclick="mudarTab('estoque', this)">
           <span class="tab-text"
-            ><i class="ui-icon" data-lucide="settings" aria-hidden="true"></i>
-            Pré-definidos</span
+            ><i class="ui-icon" data-lucide="warehouse" aria-hidden="true"></i>
+            Estoque</span
           >
           <i
             class="tab-icon ui-icon"
-            data-lucide="settings"
+            data-lucide="warehouse"
             aria-hidden="true"
           ></i>
-          <span class="tab-label">Pré-def.</span>
+          <span class="tab-label">Estoque</span>
         </button>
       </nav>
 
@@ -985,12 +1054,31 @@
           </div>
         </div>
 
-        <!-- PRÉ-DEFINIDOS -->
-        <div class="panel" id="tab-config">
+        <!-- CONTROLE DE ESTOQUE -->
+        <div class="panel" id="tab-estoque">
           <div class="sec-title">
-            <i class="ui-icon" data-lucide="settings" aria-hidden="true"></i>
-            <span>Pré-definidos</span>
+            <i class="ui-icon" data-lucide="warehouse" aria-hidden="true"></i>
+            <span>Controle de Estoque</span>
           </div>
+
+          <div class="cards" id="cards-estoque"></div>
+
+          <!-- Migração única: só aparece para admin quando não há produtos no banco -->
+          <div class="box" id="estoque-importar" style="display: none">
+            <h2>
+              <i class="ui-icon" data-lucide="package" aria-hidden="true"></i>
+              Nenhum produto no banco de dados
+            </h2>
+            <p style="color: var(--cinza); font-size: 13px; margin: 6px 0 14px">
+              Importe a lista que já existia neste aparelho (ou a lista padrão)
+              para o Firestore. Depois disso tudo passa a ser salvo no banco.
+            </p>
+            <button class="btn btn-primary" onclick="importarProdutosIniciais()">
+              <i class="ui-icon" data-lucide="save" aria-hidden="true"></i>
+              Importar produtos para o banco
+            </button>
+          </div>
+
           <div class="box">
             <div
               style="
@@ -1004,33 +1092,33 @@
             >
               <div>
                 <h2 style="margin: 0">
-                  <i
-                    class="ui-icon"
-                    data-lucide="package"
-                    aria-hidden="true"
-                  ></i>
-                  Produtos Cadastrados
+                  <i class="ui-icon" data-lucide="package" aria-hidden="true"></i>
+                  Produtos e Saldo
                 </h2>
-                <p
-                  style="color: var(--cinza); font-size: 13px; margin-top: 4px"
-                >
-                  Gerencie os produtos disponíveis para venda.
+                <p style="color: var(--cinza); font-size: 13px; margin-top: 4px">
+                  Vendas baixam o estoque automaticamente; cancelamentos devolvem.
                 </p>
               </div>
-              <button class="btn btn-primary" onclick="abrirFormProduto()">
+              <button class="btn btn-primary" id="btn-novo-produto" onclick="abrirFormProduto()">
                 <i class="ui-icon" data-lucide="plus" aria-hidden="true"></i>
                 Novo Produto
               </button>
             </div>
-            <div id="lista-predefinidos" class="lista-predefinidos">
-              <!-- preenchido por renderPredefinidos() -->
-            </div>
+            <div id="lista-estoque" class="lista-predefinidos"></div>
+          </div>
+
+          <div class="box">
+            <h2>
+              <i class="ui-icon" data-lucide="clipboard-list" aria-hidden="true"></i>
+              Últimas Movimentações
+            </h2>
+            <div id="lista-movs" class="lista-predefinidos" style="margin-top: 12px"></div>
           </div>
         </div>
       </div>
       <!-- /content -->
 
-      <!-- MODAL PRODUTO (Pré-definidos) -->
+      <!-- MODAL PRODUTO -->
       <div class="modal-bg" id="modal-produto-bg">
         <div class="modal" style="max-width: 460px">
           <h3 id="modal-produto-titulo">
@@ -1040,11 +1128,7 @@
           <div class="fgrid" style="margin-top: 14px">
             <div class="fg" style="grid-column: 1/-1">
               <label>Nome do Produto</label>
-              <input
-                type="text"
-                id="prod-nome"
-                placeholder="Ex: 1kg Turbinado Direto"
-              />
+              <input type="text" id="prod-nome" placeholder="Ex: 1kg Turbinado Direto" />
             </div>
             <div class="fg">
               <label>Ícone</label>
@@ -1059,34 +1143,83 @@
             </div>
             <div class="fg">
               <label>Preço de Venda (R$)</label>
-              <input
-                type="number"
-                id="prod-preco"
-                step="0.01"
-                min="0"
-                placeholder="0,00"
-              />
+              <input type="number" id="prod-preco" step="0.01" min="0" placeholder="0,00" />
             </div>
             <div class="fg">
               <label>Custo do Produto (R$)</label>
-              <input
-                type="number"
-                id="prod-custo"
-                step="0.01"
-                min="0"
-                placeholder="0,00"
-              />
+              <input type="number" id="prod-custo" step="0.01" min="0" placeholder="0,00" />
+            </div>
+            <div class="fg" id="fg-prod-estoque">
+              <label>Estoque inicial (un.)</label>
+              <input type="number" id="prod-estoque" step="1" min="0" placeholder="0" />
+            </div>
+            <div class="fg">
+              <label>Estoque mínimo (aviso)</label>
+              <input type="number" id="prod-minimo" step="1" min="0" placeholder="0" />
+            </div>
+            <div class="fg">
+              <label>Vende pelo WhatsApp?</label>
+              <select id="prod-whatsapp" onchange="alternarCamposWhatsApp()">
+                <option value="nao">Não</option>
+                <option value="sim">Sim (bot Sendfy)</option>
+              </select>
+            </div>
+            <div class="fg" id="fg-prod-linha" style="display: none">
+              <label>Linha</label>
+              <select id="prod-linha">
+                <option value="turbinado">Turbinado</option>
+                <option value="frutifera">Frutífera</option>
+              </select>
+            </div>
+            <div class="fg" id="fg-prod-tamanho" style="display: none">
+              <label>Tamanho (kg)</label>
+              <input type="number" id="prod-tamanho" step="1" min="1" placeholder="Ex: 4" />
             </div>
           </div>
           <input type="hidden" id="prod-edit-id" />
           <div class="btn-row" style="margin-top: 18px">
-            <button class="btn btn-primary" onclick="salvarProduto()">
+            <button class="btn btn-primary" id="btn-salvar-produto" onclick="salvarProduto()">
               <i class="ui-icon" data-lucide="save" aria-hidden="true"></i>
               Salvar
             </button>
-            <button class="btn btn-ghost" onclick="fecharFormProduto()">
-              Cancelar
+            <button class="btn btn-ghost" onclick="fecharFormProduto()">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL MOVIMENTAÇÃO DE ESTOQUE -->
+      <div class="modal-bg" id="modal-mov-bg">
+        <div class="modal" style="max-width: 420px">
+          <h3 id="modal-mov-titulo">
+            <i class="ui-icon" data-lucide="warehouse" aria-hidden="true"></i>
+            Movimentar estoque
+          </h3>
+          <p id="mov-produto-info" style="color: var(--cinza); font-size: 13px; margin-top: 6px"></p>
+          <div class="fgrid" style="margin-top: 14px">
+            <div class="fg" style="grid-column: 1/-1">
+              <label>Tipo</label>
+              <select id="mov-tipo" onchange="atualizarRotuloMov()">
+                <option value="entrada">Entrada (produção / compra)</option>
+                <option value="saida">Saída (perda / uso interno)</option>
+                <option value="ajuste">Ajuste (contagem: definir saldo)</option>
+              </select>
+            </div>
+            <div class="fg">
+              <label id="mov-qtd-label">Quantidade</label>
+              <input type="number" id="mov-qtd" step="1" min="0" placeholder="0" />
+            </div>
+            <div class="fg">
+              <label>Motivo / observação</label>
+              <input type="text" id="mov-motivo" maxlength="120" placeholder="Ex: lote novo" />
+            </div>
+          </div>
+          <input type="hidden" id="mov-prod-id" />
+          <div class="btn-row" style="margin-top: 18px">
+            <button class="btn btn-primary" id="btn-salvar-mov" onclick="salvarMovimentacao()">
+              <i class="ui-icon" data-lucide="save" aria-hidden="true"></i>
+              Registrar
             </button>
+            <button class="btn btn-ghost" onclick="fecharMov()">Cancelar</button>
           </div>
         </div>
       </div>
@@ -1226,6 +1359,14 @@
       <div class="toast" id="toast"></div>
 
       <script src="js/script.js"></script>
+      <script>
+        // PWA: registra o service worker (só em http/https, não dentro do app Capacitor)
+        if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !window.Capacitor) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW não registrado:', e));
+          });
+        }
+      </script>
     </div>
     <!-- /app-content -->
   </body>
