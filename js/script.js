@@ -7,16 +7,16 @@ const metas = {
 
 // Lista usada só na importação única para o Firestore (veja importarProdutosIniciais)
 const PRODUTOS_PADRAO = [
-    { id: 'dT1',  icon: 'sprout', nome: '1kg Turbinado Direto',    preco: 9,   custo: 3  },
-    { id: 'dT4',  icon: 'leaf', nome: '4kg Turbinado Direto',    preco: 25,  custo: 7  },
-    { id: 'cT1',  icon: 'sprout', nome: '1kg Turbinado Consignado',preco: 12,  custo: 3  },
-    { id: 'cT4',  icon: 'leaf', nome: '4kg Turbinado Consignado',preco: 20,  custo: 7  },
-    { id: 'dF1',  icon: 'citrus', nome: '1kg Frutífero Direto',    preco: 12,  custo: 4  },
-    { id: 'dF4',  icon: 'tree-pine', nome: '4kg Frutífero Direto',    preco: 7,   custo: 8  },
-    { id: 'cF1',  icon: 'citrus', nome: '1kg Frutífero Consignado',preco: 35,  custo: 4  },
-    { id: 'cF4',  icon: 'tree-pine', nome: '4kg Frutífero Consignado',preco: 20,  custo: 8  },
-    { id: 'p50',  icon: 'package', nome: '50kg Granel',             preco: 270, custo: 88 },
-    { id: 'p100', icon: 'factory', nome: '100kg Granel',            preco: 400, custo: 175},
+    { id: 'dT1',  icon: 'sprout', nome: '1kg Turbinado Direto',    preco: 9 },
+    { id: 'dT4',  icon: 'leaf', nome: '4kg Turbinado Direto',    preco: 25 },
+    { id: 'cT1',  icon: 'sprout', nome: '1kg Turbinado Consignado',preco: 12 },
+    { id: 'cT4',  icon: 'leaf', nome: '4kg Turbinado Consignado',preco: 20 },
+    { id: 'dF1',  icon: 'citrus', nome: '1kg Frutífero Direto',    preco: 12 },
+    { id: 'dF4',  icon: 'tree-pine', nome: '4kg Frutífero Direto',    preco: 7 },
+    { id: 'cF1',  icon: 'citrus', nome: '1kg Frutífero Consignado',preco: 35 },
+    { id: 'cF4',  icon: 'tree-pine', nome: '4kg Frutífero Consignado',preco: 20 },
+    { id: 'p50',  icon: 'package', nome: '50kg Granel',             preco: 270 },
+    { id: 'p100', icon: 'factory', nome: '100kg Granel',            preco: 400 },
 ];
 const ICONES_LEGADOS = {
     '\u{1F331}': 'sprout', '\u{1F33F}': 'leaf', '\u{1F34A}': 'citrus',
@@ -182,7 +182,7 @@ function mudarTab(id, btn) {
 }
 
 // ── carrinho ──────────────────────────────────────────────────────
-// Cada item: { prodId, nome, icon, qtd, unit, custo }
+// Cada item: { prodId, nome, icon, qtd, unit }
 let carrinho = [];
 
 function adicionarAoCarrinho(id) {
@@ -192,7 +192,7 @@ function adicionarAoCarrinho(id) {
     if (existente) {
         existente.qtd += 1;
     } else {
-        carrinho.push({ prodId: id, nome: p.nome, icon: p.icon, qtd: 1, unit: p.preco, custo: p.custo });
+        carrinho.push({ prodId: id, nome: p.nome, icon: p.icon, qtd: 1, unit: p.preco });
     }
     renderCarrinho();
     toast(`${p.nome} adicionado.`);
@@ -295,7 +295,7 @@ function lancarVenda() {
     const total = +(carrinho.reduce((s, i) => s + i.qtd * i.unit, 0).toFixed(2));
     const itens = carrinho.map(i => ({
         prodId: i.prodId, nome: i.nome, icon: i.icon, qtd: i.qtd, unit: i.unit,
-        custo: i.custo, subtotal: +(i.qtd * i.unit).toFixed(2)
+        subtotal: +(i.qtd * i.unit).toFixed(2)
     }));
 
     const usuario = window._auth?.currentUser;
@@ -421,18 +421,7 @@ async function salvarEdicao() {
 function vendaItens(v) {
     if (v.itens && v.itens.length > 0) return v.itens;
     // venda legada (campo único)
-    return [{ nome: produtoLabel(v), icon: 'package', qtd: v.qtd || 1, unit: v.unit || 0, custo: custoLegado(v), subtotal: v.total || 0 }];
-}
-
-function custoLegado(v) {
-    // tenta achar custo pelo prodId legado
-    const p = listaProdutos().find(x => x.id === (v.prodId || ''));
-    if (p) return p.custo;
-    // fallback pelos campos antigos
-    if (v.tamanho === '50') return 88;
-    if (v.tamanho === '100') return 175;
-    if (v.produto === 'frutifero') return v.tamanho === '1' ? 4 : 8;
-    return v.tamanho === '1' ? 3 : 7;
+    return [{ nome: produtoLabel(v), icon: 'package', qtd: v.qtd || 1, unit: v.unit || 0, subtotal: v.total || 0 }];
 }
 
 function qtdVenda(v) {
@@ -676,12 +665,12 @@ window.renderEstoque = function () {
 
     // cards-resumo
     const unidades = prods.reduce((s, p) => s + Math.max(nEstoque(p), 0), 0);
-    const valorCusto = prods.reduce((s, p) => s + Math.max(nEstoque(p), 0) * (Number(p.custo) || 0), 0);
+    const valorEstoque = prods.reduce((s, p) => s + Math.max(nEstoque(p), 0) * (Number(p.preco) || 0), 0);
     const alertas = prods.filter(p => ['Baixo', 'Zerado', 'Negativo'].includes(statusEstoque(p).txt)).length;
     el('cards-estoque').innerHTML = `
     <div class="card"><div class="card-label">Produtos</div><div class="card-val">${prods.length}</div><div class="card-sub">cadastrados</div></div>
     <div class="card"><div class="card-label">Unidades em Estoque</div><div class="card-val">${unidades}</div><div class="card-sub">saldo atual</div></div>
-    <div class="card"><div class="card-label">Valor em Estoque</div><div class="card-val">R$ ${valorCusto.toFixed(2)}</div><div class="card-sub">a preço de custo</div></div>
+    <div class="card"><div class="card-label">Valor em Estoque</div><div class="card-val">R$ ${valorEstoque.toFixed(2)}</div><div class="card-sub">a preço de venda</div></div>
     <div class="card"><div class="card-label">Atenção</div><div class="card-val" style="color:${alertas ? 'var(--amarelo)' : 'var(--neon)'}">${alertas}</div><div class="card-sub">baixo / zerado</div></div>`;
 
     // botão novo produto e importação (só admin)
@@ -698,7 +687,7 @@ window.renderEstoque = function () {
             ${iconeMarkup(p.icon, 'predef-icon ui-icon')}
             <div class="predef-info">
                 <div class="predef-nome">${esc(p.nome)}</div>
-                <div class="predef-sub">Preço: <strong>R$ ${(Number(p.preco) || 0).toFixed(2)}</strong> · Custo: R$ ${(Number(p.custo) || 0).toFixed(2)}${p.whatsapp ? ' · WhatsApp' : ''}${Number(p.estoqueMinimo) > 0 ? ' · Mín: ' + Number(p.estoqueMinimo) : ''}</div>
+                <div class="predef-sub">Preço: <strong>R$ ${(Number(p.preco) || 0).toFixed(2)}</strong> ${p.whatsapp ? ' · WhatsApp' : ''}${Number(p.estoqueMinimo) > 0 ? ' · Mín: ' + Number(p.estoqueMinimo) : ''}</div>
             </div>
             <div class="estoque-saldo"><strong>${nEstoque(p)}</strong><span class="badge ${st.cls}">${st.txt}</span></div>
             <div class="predef-acoes">
@@ -745,7 +734,6 @@ function abrirFormProduto(id) {
     el('prod-nome').value = p ? p.nome : '';
     el('prod-icon').value = normalizarIcone(p ? p.icon : 'package');
     el('prod-preco').value = p ? p.preco : '';
-    el('prod-custo').value = p ? p.custo : '';
     el('prod-estoque').value = '';
     el('prod-minimo').value = p && p.estoqueMinimo ? p.estoqueMinimo : '';
     el('prod-whatsapp').value = p && p.whatsapp ? 'sim' : 'nao';
@@ -765,7 +753,6 @@ async function salvarProduto() {
     const nome = el('prod-nome').value.trim();
     const icon = normalizarIcone(el('prod-icon').value);
     const preco = parseFloat(el('prod-preco').value) || 0;
-    const custo = parseFloat(el('prod-custo').value) || 0;
     const estoqueMinimo = Math.max(parseInt(el('prod-minimo').value) || 0, 0);
     const whatsapp = el('prod-whatsapp').value === 'sim';
     const linha = whatsapp ? el('prod-linha').value : null;
@@ -774,7 +761,7 @@ async function salvarProduto() {
     if (preco <= 0) return toast('Informe um preço válido.', 'err');
     if (whatsapp && tamanho < 1) return toast('Informe o tamanho (kg) para vender pelo WhatsApp.', 'err');
 
-    const dados = { nome, icon, preco, custo, estoqueMinimo, whatsapp, linha, tamanho, atualizadoEm: fs.serverTimestamp() };
+    const dados = { nome, icon, preco, estoqueMinimo, whatsapp, linha, tamanho, atualizadoEm: fs.serverTimestamp() };
     const idEdicao = el('prod-edit-id').value;
     const btn = el('btn-salvar-produto');
     btn.disabled = true;
@@ -824,7 +811,7 @@ async function importarProdutosIniciais() {
         origem.forEach(p => {
             batch.set(fs.doc(db, 'produtos', String(p.id)), {
                 nome: p.nome, icon: normalizarIcone(p.icon),
-                preco: Number(p.preco) || 0, custo: Number(p.custo) || 0,
+                preco: Number(p.preco) || 0,
                 estoque: 0, estoqueMinimo: 0, whatsapp: false,
                 criadoEm: fs.serverTimestamp(), atualizadoEm: fs.serverTimestamp()
             });

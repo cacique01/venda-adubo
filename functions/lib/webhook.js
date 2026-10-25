@@ -110,7 +110,6 @@ function localDate(date) {
 
 function buildSale(product, data, date) {
   const unit = Number(product.preco);
-  const cost = Number(product.custo) || 0;
   const subtotal = Number((data.quantity * unit).toFixed(2));
   return {
     data: localDate(date),
@@ -120,7 +119,6 @@ function buildSale(product, data, date) {
       icon: product.icon || 'package',
       qtd: data.quantity,
       unit,
-      custo: cost,
       subtotal,
     }],
     total: subtotal,
