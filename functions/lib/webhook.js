@@ -62,6 +62,69 @@ function onlyDigits(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
+function parseMoney(value) {
+  return Number(String(value).replace(',', '.'));
+}
+
+function parsePayment(text) {
+  const paymentText = normalizeText(text);
+  return paymentText.includes('pix')
+    ? 'PIX'
+    : paymentText.includes('dinheiro') || paymentText.includes('especie')
+      ? 'Dinheiro'
+      : paymentText.includes('cart')
+        ? 'Cartão'
+        : paymentText.includes('prazo') || paymentText.includes('fiado')
+          ? 'A prazo'
+          : null;
+}
+
+// Lê a mensagem de fechamento escrita pelo agente da Sendfy, por exemplo:
+// "Fechando: 1 Frutífera 4kg + 2 Turbinado 5kg = R$75, entrega grátis, total R$75.
+//  Entrega na Rua X, 120, Bairro, sábado de manhã, pagamento no Pix. Confirma?"
+export function parseFechando(raw) {
+  const errors = [];
+  const text = normalizeText(raw);
+  const start = text.indexOf('fechando');
+  if (start < 0) return { errors: ['texto do pedido sem "Fechando:"'], items: [] };
+  const body = text.slice(start);
+
+  const found = new Map();
+  for (const match of body.matchAll(/(\d+)\s*(?:x\s*)?(frutifer[ao]|turbinado)(?:\s+premium)?\s*(\d+)\s*kg/g)) {
+    const line = match[2].startsWith('frutifer') ? 'frutifera' : 'turbinado';
+    const size = Number.parseInt(match[3], 10);
+    const quantity = Number.parseInt(match[1], 10);
+    const key = `${line}|${size}`;
+    const current = found.get(key) || { line, size, quantity: 0 };
+    current.quantity += quantity;
+    found.set(key, current);
+  }
+  const items = [...found.values()];
+  if (!items.length) errors.push('nenhum produto reconhecido no pedido');
+  if (items.length > 10) errors.push('itens demais no pedido (máximo 10)');
+  if (items.some((item) => item.size < 1 || item.quantity < 1 || item.quantity > 500)) {
+    errors.push('quantidade inválida (1 a 500)');
+  }
+
+  let shipping = 0;
+  if (!/(entrega|frete)\s+gratis/.test(body)) {
+    const fee = body.match(/(?:frete|taxa(?:\s+de\s+entrega)?)\s*(?:de\s*)?r\$\s*(\d+(?:[.,]\d{1,2})?)/);
+    if (fee) shipping = parseMoney(fee[1]);
+  }
+
+  const totalMatch = body.match(/total\s*(?:de\s*)?r\$\s*(\d+(?:[.,]\d{1,2})?)/);
+  const declaredTotal = totalMatch ? parseMoney(totalMatch[1]) : null;
+
+  const paymentIndex = body.lastIndexOf('pagamento');
+  const payment = parsePayment(paymentIndex >= 0 ? body.slice(paymentIndex) : body);
+  if (!payment) errors.push('forma de pagamento inválida');
+
+  const deliveryMatch = String(raw).match(/entrega\s+(?:na|no|em)\s+(.+?),\s*pagamento/i);
+  const delivery = deliveryMatch ? deliveryMatch[1].trim().slice(0, 200) : '';
+
+  return { errors, items, payment, shipping, declaredTotal, delivery };
+}
+
 function validatePayload(body) {
   const errors = [];
   const phone = onlyDigits(body.phone || body.whatsapp_number || body.telefone);
@@ -69,6 +132,24 @@ function validatePayload(body) {
 
   const client = String(body.cliente || body.name || body.nome || '').trim().slice(0, 80);
   if (!client) errors.push('nome do cliente ausente');
+
+  const summary = String(body.fechando || body.resumo || body.pedido_texto || '').trim();
+  if (summary) {
+    const parsed = parseFechando(summary);
+    errors.push(...parsed.errors);
+    return {
+      errors,
+      data: {
+        phone,
+        client,
+        items: parsed.items,
+        payment: parsed.payment,
+        shipping: parsed.shipping || 0,
+        declaredTotal: parsed.declaredTotal ?? null,
+        delivery: parsed.delivery || '',
+      },
+    };
+  }
 
   const productLine = normalizeText(body.linha || body.produto);
   const line = productLine.includes('frut')
@@ -86,21 +167,20 @@ function validatePayload(body) {
   const quantity = quantityMatch ? Number.parseInt(quantityMatch[0], 10) : null;
   if (!quantity || quantity < 1 || quantity > 500) errors.push('quantidade inválida (1 a 500)');
 
-  const paymentText = normalizeText(body.pagamento);
-  const payment = paymentText.includes('pix')
-    ? 'PIX'
-    : paymentText.includes('dinheiro') || paymentText.includes('especie')
-      ? 'Dinheiro'
-      : paymentText.includes('cart')
-        ? 'Cartão'
-        : paymentText.includes('prazo') || paymentText.includes('fiado')
-          ? 'A prazo'
-          : null;
+  const payment = parsePayment(body.pagamento);
   if (!payment) errors.push('forma de pagamento inválida');
 
   return {
     errors,
-    data: { phone, client, line, size, quantity, payment },
+    data: {
+      phone,
+      client,
+      items: [{ line, size, quantity }],
+      payment,
+      shipping: 0,
+      declaredTotal: null,
+      delivery: '',
+    },
   };
 }
 
@@ -108,20 +188,35 @@ function localDate(date) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba' }).format(date);
 }
 
-function buildSale(product, data, date) {
-  const unit = Number(product.preco);
-  const subtotal = Number((data.quantity * unit).toFixed(2));
-  return {
-    data: localDate(date),
-    itens: [{
+function buildSale(entries, data, date) {
+  const itens = entries.map(({ product, quantity }) => {
+    const unit = Number(product.preco);
+    return {
       prodId: product.id,
       nome: product.nome,
       icon: product.icon || 'package',
-      qtd: data.quantity,
+      qtd: quantity,
       unit,
-      subtotal,
-    }],
-    total: subtotal,
+      subtotal: Number((quantity * unit).toFixed(2)),
+    };
+  });
+  const subtotal = Number(itens.reduce((sum, item) => sum + item.subtotal, 0).toFixed(2));
+  const shipping = Number(data.shipping) || 0;
+  const total = Number((subtotal + shipping).toFixed(2));
+
+  const notes = ['Venda via WhatsApp (Sendfy)'];
+  if (data.delivery) notes.push(`Entrega: ${data.delivery}`);
+  if (shipping > 0) notes.push(`Frete R$ ${shipping.toFixed(2)}`);
+  if (data.declaredTotal != null && Math.abs(data.declaredTotal - total) > 0.009) {
+    notes.push(`Atenção: o bot informou total de R$ ${data.declaredTotal.toFixed(2)} e o sistema calculou R$ ${total.toFixed(2)}`);
+  }
+
+  return {
+    data: localDate(date),
+    itens,
+    subtotal,
+    frete: shipping,
+    total,
     cliente: data.client,
     telefone: data.phone,
     responsavel: 'WhatsApp',
@@ -129,17 +224,20 @@ function buildSale(product, data, date) {
     vendedorEmail: '',
     vendedorUid: '',
     pagamento: data.payment,
-    obs: 'Venda via WhatsApp (Sendfy)',
+    obs: notes.join(' | '),
     status: 'Confirmada',
     origem: 'whatsapp',
     estoqueBaixado: true,
   };
 }
 
-async function saleId(data, productId, date) {
+async function saleId(data, entries, date) {
   const window = Math.floor(date.getTime() / 120000);
+  const products = [...entries]
+    .sort((a, b) => String(a.product.id).localeCompare(String(b.product.id)))
+    .flatMap((entry) => [entry.product.id, entry.quantity]);
   const input = new TextEncoder().encode(
-    [data.phone, productId, data.quantity, data.payment, window].join('|'),
+    [data.phone, ...products, data.payment, window].join('|'),
   );
   const digest = await crypto.subtle.digest('SHA-1', input);
   const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -284,52 +382,53 @@ async function findProduct(env, token, data, fetchImpl) {
   };
 }
 
-async function createSale(env, token, id, sale, product, fetchImpl) {
+async function createSale(env, token, id, sale, entries, fetchImpl) {
   const url = `${FIRESTORE_BASE_URL}/projects/${encodeURIComponent(env.FIREBASE_PROJECT_ID)}`
     + `/databases/(default)/documents:commit`;
   const base = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
-  const item = sale.itens[0];
-  const movement = {
-    prodId: product.id,
-    prodNome: product.nome,
-    tipo: 'venda',
-    qtd: -item.qtd,
-    motivo: `Venda para ${sale.cliente}`,
-    usuario: 'WhatsApp',
-    usuarioEmail: '',
-    vendaId: id,
-  };
   const toFields = (data) => Object.fromEntries(
     Object.entries(data).map(([key, value]) => [key, firestoreValue(value)]),
   );
-  // Um único commit atômico: a venda, a baixa do estoque e o registro da movimentação
+  // Um único commit atômico: a venda, a baixa de cada produto e o registro das movimentações
   // gravam juntos ou não gravam. A venda vem primeiro; se ela já existir (webhook repetido)
   // o commit inteiro falha com 409 e o estoque não é baixado duas vezes.
+  const writes = [
+    {
+      update: { name: `${base}/vendas/${id}`, fields: toFields(sale) },
+      currentDocument: { exists: false },
+      updateTransforms: [{ fieldPath: 'criadoEm', setToServerValue: 'REQUEST_TIME' }],
+    },
+  ];
+  entries.forEach(({ product, quantity }, index) => {
+    writes.push({
+      transform: {
+        document: `${base}/produtos/${product.id}`,
+        fieldTransforms: [
+          { fieldPath: 'estoque', increment: { integerValue: String(-quantity) } },
+          { fieldPath: 'atualizadoEm', setToServerValue: 'REQUEST_TIME' },
+        ],
+      },
+    });
+    const movement = {
+      prodId: product.id,
+      prodNome: product.nome,
+      tipo: 'venda',
+      qtd: -quantity,
+      motivo: `Venda para ${sale.cliente}`,
+      usuario: 'WhatsApp',
+      usuarioEmail: '',
+      vendaId: id,
+    };
+    const movementId = entries.length === 1 ? `mv_${id}` : `mv_${id}_${index + 1}`;
+    writes.push({
+      update: { name: `${base}/movimentacoes/${movementId}`, fields: toFields(movement) },
+      currentDocument: { exists: false },
+      updateTransforms: [{ fieldPath: 'criadoEm', setToServerValue: 'REQUEST_TIME' }],
+    });
+  });
   return firestoreRequest(url, token, fetchImpl, {
     method: 'POST',
-    body: JSON.stringify({
-      writes: [
-        {
-          update: { name: `${base}/vendas/${id}`, fields: toFields(sale) },
-          currentDocument: { exists: false },
-          updateTransforms: [{ fieldPath: 'criadoEm', setToServerValue: 'REQUEST_TIME' }],
-        },
-        {
-          transform: {
-            document: `${base}/produtos/${product.id}`,
-            fieldTransforms: [
-              { fieldPath: 'estoque', increment: { integerValue: String(-item.qtd) } },
-              { fieldPath: 'atualizadoEm', setToServerValue: 'REQUEST_TIME' },
-            ],
-          },
-        },
-        {
-          update: { name: `${base}/movimentacoes/mv_${id}`, fields: toFields(movement) },
-          currentDocument: { exists: false },
-          updateTransforms: [{ fieldPath: 'criadoEm', setToServerValue: 'REQUEST_TIME' }],
-        },
-      ],
-    }),
+    body: JSON.stringify({ writes }),
   });
 }
 
@@ -385,21 +484,25 @@ export async function handleWebhook(request, env, dependencies = {}) {
   try {
     const date = now();
     const token = await accessToken(env, fetchImpl, date);
-    const product = await findProduct(env, token, data, fetchImpl);
-    if (!product) {
-      return json(404, {
-        ok: false,
-        erro: `produto não encontrado: ${data.line} ${data.size}kg`,
-      });
-    }
-    if (!(Number(product.preco) > 0)) {
-      return json(422, { ok: false, erro: 'produto sem preço cadastrado' });
+    const entries = [];
+    for (const item of data.items) {
+      const product = await findProduct(env, token, item, fetchImpl);
+      if (!product) {
+        return json(404, {
+          ok: false,
+          erro: `produto não encontrado: ${item.line} ${item.size}kg`,
+        });
+      }
+      if (!(Number(product.preco) > 0)) {
+        return json(422, { ok: false, erro: 'produto sem preço cadastrado' });
+      }
+      entries.push({ product, quantity: item.quantity });
     }
 
-    const id = await saleId(data, product.id, date);
-    const sale = buildSale(product, data, date);
+    const id = await saleId(data, entries, date);
+    const sale = buildSale(entries, data, date);
     try {
-      await createSale(env, token, id, sale, product, fetchImpl);
+      await createSale(env, token, id, sale, entries, fetchImpl);
     } catch (error) {
       if (error.status === 409) return json(200, { ok: true, duplicada: true, id });
       throw error;
