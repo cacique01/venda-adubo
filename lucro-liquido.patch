@@ -1,0 +1,72 @@
+--- a/js/script.js	2026-10-25 18:29:14.106256674 -0400
++++ b/js/script.js	2026-10-25 18:29:14.109948548 -0400
+@@ -66,8 +66,12 @@
+     return gastos().filter(g => g.data && g.data.startsWith(mes));
+ }
+ 
++function totalGasto(lista) {
++    return lista.reduce((s, g) => s + (parseFloat(g.valor) || 0) * (g.qtd || 1), 0);
++}
++
+ function totalGastosMes() {
+-    return gastosMes().reduce((s, g) => s + (g.valor || 0), 0);
++    return totalGasto(gastosMes());
+ }
+ 
+ window.renderGastos = function () {
+@@ -431,10 +435,6 @@
+     return v.tamanho === '1' ? 3 : 7;
+ }
+ 
+-function lucroVenda(v) {
+-    return vendaItens(v).reduce((s, i) => s + (i.unit - (i.custo || 0)) * i.qtd, 0);
+-}
+-
+ function qtdVenda(v) {
+     return vendaItens(v).reduce((s, i) => s + i.qtd, 0);
+ }
+@@ -445,15 +445,15 @@
+     const vMes = vendas().filter(v => v.data && v.data.startsWith(mes) && v.status !== 'Cancelada');
+     const fat = vMes.reduce((s, v) => s + v.total, 0);
+     const unid = vMes.reduce((s, v) => s + qtdVenda(v), 0);
+-    const lucroVendas = vMes.reduce((s, v) => s + lucroVenda(v), 0);
++    // Lucro líquido = lucro das vendas (faturamento) − gastos da empresa. O custo do produto não entra.
+     const totalGastos = totalGastosMes();
+-    const lucro = lucroVendas - totalGastos;
++    const lucro = fat - totalGastos;
+ 
+     el('cards-painel').innerHTML = `
+     <div class="card"><div class="card-label">Faturamento do Mês</div><div class="card-val">R$ ${fat.toFixed(2)}</div><div class="card-sub">${vMes.length} venda(s)</div></div>
+     <div class="card"><div class="card-label">Unidades Vendidas</div><div class="card-val">${unid}</div><div class="card-sub">este mês</div></div>
+     <div class="card"><div class="card-label">Gastos Variáveis</div><div class="card-val" style="color:var(--vermelho)">- R$ ${totalGastos.toFixed(2)}</div><div class="card-sub">este mês</div></div>
+-    <div class="card"><div class="card-label">Lucro Líquido</div><div class="card-val" style="color:${lucro >= 0 ? 'var(--neon)' : 'var(--vermelho)'}">R$ ${lucro.toFixed(2)}</div><div class="card-sub">após custos e gastos</div></div>
++    <div class="card"><div class="card-label">Lucro Líquido</div><div class="card-val" style="color:${lucro >= 0 ? 'var(--neon)' : 'var(--vermelho)'}">R$ ${lucro.toFixed(2)}</div><div class="card-sub">vendas − gastos do mês</div></div>
+   `;
+ 
+     const pct = metas.valor > 0 ? Math.min((fat / metas.valor) * 100, 100) : 0;
+@@ -516,12 +516,13 @@
+ 
+     const fat = vSem.reduce((s, v) => s + v.total, 0);
+     const unid = vSem.reduce((s, v) => s + qtdVenda(v), 0);
+-    const lucro = vSem.reduce((s, v) => s + lucroVenda(v), 0);
++    const gastosSem = totalGasto(gastos().filter(g => dias.includes(g.data)));
++    const lucro = fat - gastosSem;
+ 
+     el('cards-semana').innerHTML = `
+     <div class="card"><div class="card-label">Faturamento Semanal</div><div class="card-val">R$ ${fat.toFixed(2)}</div></div>
+     <div class="card"><div class="card-label">Unidades na Semana</div><div class="card-val">${unid}</div></div>
+-    <div class="card"><div class="card-label">Lucro Semanal</div><div class="card-val">R$ ${lucro.toFixed(2)}</div><div class="card-sub">após custos dos produtos</div></div>
++    <div class="card"><div class="card-label">Lucro Líquido Semanal</div><div class="card-val" style="color:${lucro >= 0 ? 'var(--neon)' : 'var(--vermelho)'}">R$ ${lucro.toFixed(2)}</div><div class="card-sub">vendas − gastos da semana (R$ ${gastosSem.toFixed(2)})</div></div>
+   `;
+ 
+     el('week-grid').innerHTML = dias.map((d, i) => {
+--- a/index.html	2026-10-25 18:29:14.108206391 -0400
++++ b/index.html	2026-10-25 18:29:14.111892277 -0400
+@@ -173,6 +173,7 @@
+                           window._gastos = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+                           if (typeof window.renderPainel === 'function') window.renderPainel();
+                           if (typeof window.renderGastos === 'function') window.renderGastos();
++                          if (typeof window.renderSemana === 'function') window.renderSemana();
+                       }, (err) => {
+                           console.error('Gastos erro:', err.code, err.message);
+                           window._gastos = [];

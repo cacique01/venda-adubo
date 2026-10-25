@@ -173,6 +173,7 @@
                           window._gastos = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
                           if (typeof window.renderPainel === 'function') window.renderPainel();
                           if (typeof window.renderGastos === 'function') window.renderGastos();
+                          if (typeof window.renderSemana === 'function') window.renderSemana();
                       }, (err) => {
                           console.error('Gastos erro:', err.code, err.message);
                           window._gastos = [];
