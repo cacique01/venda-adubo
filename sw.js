@@ -1,6 +1,6 @@
 // Service worker do PWA — cuida apenas do "casco" do app (HTML/CSS/JS/ícones).
 // Dados (vendas, estoque, etc.) vivem no Firestore e NUNCA passam por este cache.
-const VERSAO = 'gatti-v1';
+const VERSAO = 'gatti-v2';
 const CASCO = [
   './',
   'index.html',

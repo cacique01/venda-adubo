@@ -25,7 +25,8 @@ const ICONES_LEGADOS = {
 const ICONES_VALIDOS = new Set([
     'sprout', 'leaf', 'citrus', 'tree-pine', 'package', 'factory', 'wallet', 'user-round',
     'credit-card', 'calendar-days', 'badge-dollar-sign', 'clipboard-list', 'circle-check',
-    'receipt-text', 'pencil', 'circle-x', 'trash-2', 'save', 'file-text', 'file-spreadsheet', 'minus', 'plus'
+    'receipt-text', 'pencil', 'circle-x', 'trash-2', 'save', 'file-text', 'file-spreadsheet', 'minus', 'plus',
+    'gem', 'apple', 'flower-2', 'leafy-green', 'tree-deciduous'
 ]);
 function normalizarIcone(icon) {
     const nome = ICONES_LEGADOS[icon] || icon;
