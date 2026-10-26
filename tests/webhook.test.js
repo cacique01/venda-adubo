@@ -162,14 +162,22 @@ test('treats Firestore document conflicts as duplicate webhook deliveries', asyn
   assert.equal((await response.json()).duplicada, true);
 });
 
-test('reports a missing product', async () => {
+test('registers the sale even when the product is not in the catalog', async () => {
   const mock = firestoreMock({ foundProduct: null });
   const response = await handleWebhook(
     request(payload),
     environment,
     { fetch: mock.fetch, now: () => now },
   );
-  assert.equal(response.status, 404);
+  assert.equal(response.status, 200);
+  const writes = JSON.parse(mock.calls.find((c) => c.url.endsWith(':commit')).options.body).writes;
+  // só a venda: sem baixa de estoque e sem movimentação
+  assert.equal(writes.length, 1);
+  const fields = writes[0].update.fields;
+  assert.equal(fields.estoqueBaixado.booleanValue, false);
+  assert.equal(fields.total.integerValue, '0');
+  assert.match(fields.obs.stringValue, /produto não cadastrado no estoque/);
+  assert.match(fields.obs.stringValue, /Valor do produto não informado pelo bot/);
 });
 
 test('reports products without a price', async () => {
@@ -324,10 +332,45 @@ test('merges repeated lines of the same product and detects duplicates', async (
   assert.equal(duplicate.body.duplicada, true);
 });
 
-test('reports an unknown product from the order text', async () => {
-  const { response, body } = await sendOrder(
+test('registers an unknown product from the order text using the value from the bot', async () => {
+  const { response, body, mock } = await sendOrder(
     'Fechando: 1 Turbinado 50kg = R$270, entrega grátis, total R$270. Entrega na Rua A, pagamento no pix. Confirma?',
   );
-  assert.equal(response.status, 404);
-  assert.match(body.erro, /turbinado 50kg/);
+  assert.equal(response.status, 200);
+  assert.equal(body.total, 270);
+  const writes = JSON.parse(mock.calls.find((c) => c.url.endsWith(':commit')).options.body).writes;
+  assert.equal(writes.length, 1);
+  const fields = writes[0].update.fields;
+  const item = fields.itens.arrayValue.values[0].mapValue.fields;
+  assert.equal(item.nome.stringValue, 'Turbinado 50kg');
+  assert.equal(item.prodId.stringValue, '');
+  assert.equal(item.subtotal.integerValue, '270');
+  assert.equal(fields.estoqueBaixado.booleanValue, false);
+  assert.match(fields.obs.stringValue, /Turbinado 50kg/);
+});
+
+test('unregistered product gets the remaining value after shipping and catalog items', async () => {
+  const { response, body, mock } = await sendOrder(
+    'Fechando: 1 Frutífera Premium 4kg + 2 Turbinado 50kg, frete R$10, total R$310. '
+    + 'Entrega na Rua A, pagamento no pix. Confirma?',
+  );
+  assert.equal(response.status, 200);
+  assert.equal(body.total, 310);
+  const writes = JSON.parse(mock.calls.find((c) => c.url.endsWith(':commit')).options.body).writes;
+  // venda + baixa e movimentação só do produto cadastrado
+  assert.equal(writes.length, 3);
+  assert.equal(writes[0].update.fields.estoqueBaixado.booleanValue, false);
+  const items = writes[0].update.fields.itens.arrayValue.values.map((v) => v.mapValue.fields);
+  const unknown = items.find((i) => i.nome.stringValue === 'Turbinado 50kg');
+  assert.equal(unknown.qtd.integerValue, '2');
+  assert.equal(unknown.subtotal.integerValue, '275');
+});
+
+test('unregistered product without a total from the bot is recorded with zero value and a warning', async () => {
+  const { response, mock } = await sendOrder(
+    'Fechando: 1 Turbinado 50kg, entrega grátis. Entrega na Rua A, pagamento no pix. Confirma?',
+  );
+  assert.equal(response.status, 200);
+  const writes = JSON.parse(mock.calls.find((c) => c.url.endsWith(':commit')).options.body).writes;
+  assert.match(writes[0].update.fields.obs.stringValue, /Valor do produto não informado pelo bot/);
 });

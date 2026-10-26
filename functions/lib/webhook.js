@@ -204,7 +204,16 @@ function buildSale(entries, data, date) {
   const shipping = Number(data.shipping) || 0;
   const total = Number((subtotal + shipping).toFixed(2));
 
+  const missing = entries.filter(({ product }) => product.naoCadastrado);
   const notes = ['Venda via WhatsApp (Sendfy)'];
+  if (missing.length) {
+    notes.push(
+      `Atenção: produto não cadastrado no estoque (sem baixa): ${missing.map(({ product }) => product.nome).join(', ')}`,
+    );
+    if (missing.some(({ product }) => product.valorNaoInformado)) {
+      notes.push('Valor do produto não informado pelo bot (lançado como R$ 0,00)');
+    }
+  }
   if (data.delivery) notes.push(`Entrega: ${data.delivery}`);
   if (shipping > 0) notes.push(`Frete R$ ${shipping.toFixed(2)}`);
   if (data.declaredTotal != null && Math.abs(data.declaredTotal - total) > 0.009) {
@@ -227,15 +236,15 @@ function buildSale(entries, data, date) {
     obs: notes.join(' | '),
     status: 'Confirmada',
     origem: 'whatsapp',
-    estoqueBaixado: true,
+    estoqueBaixado: missing.length === 0,
   };
 }
 
 async function saleId(data, entries, date) {
   const window = Math.floor(date.getTime() / 120000);
   const products = [...entries]
-    .sort((a, b) => String(a.product.id).localeCompare(String(b.product.id)))
-    .flatMap((entry) => [entry.product.id, entry.quantity]);
+    .sort((a, b) => String(a.product.id || a.product.nome).localeCompare(String(b.product.id || b.product.nome)))
+    .flatMap((entry) => [entry.product.id || entry.product.nome, entry.quantity]);
   const input = new TextEncoder().encode(
     [data.phone, ...products, data.payment, window].join('|'),
   );
@@ -400,6 +409,7 @@ async function createSale(env, token, id, sale, entries, fetchImpl) {
     },
   ];
   entries.forEach(({ product, quantity }, index) => {
+    if (product.naoCadastrado) return;
     writes.push({
       transform: {
         document: `${base}/produtos/${product.id}`,
@@ -485,18 +495,46 @@ export async function handleWebhook(request, env, dependencies = {}) {
     const date = now();
     const token = await accessToken(env, fetchImpl, date);
     const entries = [];
+    const unregistered = [];
     for (const item of data.items) {
       const product = await findProduct(env, token, item, fetchImpl);
       if (!product) {
-        return json(404, {
-          ok: false,
-          erro: `produto não encontrado: ${item.line} ${item.size}kg`,
-        });
+        // Produto fora do cadastro: a venda é registrada mesmo assim, sem baixa de estoque.
+        const entry = {
+          product: {
+            id: '',
+            nome: `${item.line === 'frutifera' ? 'Frutífera Premium' : 'Turbinado'} ${item.size}kg`,
+            icon: 'package',
+            preco: 0,
+            naoCadastrado: true,
+          },
+          quantity: item.quantity,
+        };
+        entries.push(entry);
+        unregistered.push(entry);
+        continue;
       }
       if (!(Number(product.preco) > 0)) {
         return json(422, { ok: false, erro: 'produto sem preço cadastrado' });
       }
       entries.push({ product, quantity: item.quantity });
+    }
+
+    if (unregistered.length) {
+      // O valor vem do bot: total informado, menos o frete e menos os itens cadastrados,
+      // dividido entre as unidades que não estão no cadastro.
+      const knownSubtotal = entries
+        .filter(({ product }) => !product.naoCadastrado)
+        .reduce((sum, { product, quantity }) => sum + Number(product.preco) * quantity, 0);
+      const units = unregistered.reduce((sum, { quantity }) => sum + quantity, 0);
+      const remaining = data.declaredTotal == null
+        ? 0
+        : data.declaredTotal - (Number(data.shipping) || 0) - knownSubtotal;
+      const unit = remaining > 0 ? Number((remaining / units).toFixed(2)) : 0;
+      for (const entry of unregistered) {
+        entry.product.preco = unit;
+        entry.product.valorNaoInformado = unit === 0;
+      }
     }
 
     const id = await saleId(data, entries, date);
